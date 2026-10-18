@@ -1,0 +1,282 @@
+"""Trading Pedro: gráfico BTC/USDT en vivo con Smart Money Concepts.
+
+Uso:
+    python trading_pedro.py              # abre http://127.0.0.1:8050 en el navegador
+    python trading_pedro.py --no-browser
+"""
+import json
+import math
+import os
+import socket
+import sys
+import threading
+import time
+import urllib.parse
+import urllib.request
+import webbrowser
+from concurrent.futures import ThreadPoolExecutor
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+os.environ.setdefault("PYTHONUTF8", "1")
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+import numpy as np
+import pandas as pd
+from smartmoneyconcepts import smc
+
+HOST, PORT = "127.0.0.1", 8050
+WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
+SYMBOL = "BTCUSDT"
+INTERVALS = {"1m", "5m", "15m", "1h", "4h", "1d"}
+# data-api.binance.vision es el servidor de datos públicos de Binance; api.binance.com
+# queda como respaldo (desde algunas ubicaciones responde 451).
+BINANCE_HOSTS = ["https://data-api.binance.vision", "https://api.binance.com"]
+INTERVAL_SEC = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
+
+MAX_CANDLES = 3000
+BINANCE_PAGE = 1000  # máximo de velas por petición en Binance
+
+_cache = {}  # temporalidad -> DataFrame con las últimas velas
+_cache_lock = threading.Lock()
+
+
+def _fetch_page(interval: str, limit: int, end_time=None) -> list:
+    last_err = None
+    for host in BINANCE_HOSTS:
+        url = f"{host}/api/v3/klines?symbol={SYMBOL}&interval={interval}&limit={limit}"
+        if end_time is not None:
+            url += f"&endTime={end_time}"
+        try:
+            with urllib.request.urlopen(url, timeout=20) as r:
+                return json.load(r)
+        except Exception as e:  # noqa: BLE001
+            last_err = e
+    raise RuntimeError(f"No se pudo descargar de Binance: {last_err}")
+
+
+def _to_df(raw: list) -> pd.DataFrame:
+    df = pd.DataFrame([row[:6] for row in raw],
+                      columns=["time", "open", "high", "low", "close", "volume"])
+    df["time"] = df["time"] // 1000  # segundos UTC
+    df = df.astype({c: float for c in ["open", "high", "low", "close", "volume"]})
+    return df.drop_duplicates("time", keep="last").sort_values("time").reset_index(drop=True)
+
+
+def get_klines(interval: str, limit: int) -> pd.DataFrame:
+    """Descarga las últimas `limit` velas en bloques de 1000, los anteriores en paralelo."""
+    first = _fetch_page(interval, min(BINANCE_PAGE, limit))
+    raw = list(first)
+    pages = math.ceil(limit / BINANCE_PAGE) - 1
+    if first and len(first) == BINANCE_PAGE and pages > 0:
+        step_ms = INTERVAL_SEC[interval] * 1000 * BINANCE_PAGE
+        ends = [first[0][0] - 1 - k * step_ms for k in range(pages)]
+        with ThreadPoolExecutor(max_workers=pages) as pool:
+            for page in pool.map(lambda e: _fetch_page(interval, BINANCE_PAGE, e), ends):
+                raw.extend(page)
+    return _to_df(raw).tail(limit).reset_index(drop=True)
+
+
+_fetched_at = {}  # temporalidad -> momento de la última actualización
+_interval_locks = {iv: threading.Lock() for iv in INTERVAL_SEC}
+REFRESH_EVERY = 15  # segundos que se reutiliza la caché sin preguntar a Binance
+
+
+def get_candles(interval: str, limit: int, max_age: float = REFRESH_EVERY) -> pd.DataFrame:
+    """Velas con caché: tras la primera descarga solo se piden las velas nuevas.
+
+    Un candado por temporalidad evita descargar lo mismo dos veces cuando la
+    precarga y una petición del navegador coinciden.
+    """
+    # Vía rápida sin esperar al candado: caché reciente y sin vela nueva desde entonces.
+    with _cache_lock:
+        cached = _cache.get(interval)
+        age = time.time() - _fetched_at.get(interval, 0)
+    if (cached is not None and len(cached) >= limit and age < max_age
+            and time.time() < cached["time"].iloc[-1] + INTERVAL_SEC[interval]):
+        return cached.tail(limit).reset_index(drop=True)
+
+    with _interval_locks[interval]:
+        with _cache_lock:
+            cached = _cache.get(interval)
+            age = time.time() - _fetched_at.get(interval, 0)
+        if cached is not None and len(cached) >= limit:
+            # Si ya empezó una vela nueva, la caché se actualiza aunque sea reciente,
+            # para que Smart Money incluya la vela que acaba de cerrar.
+            candle_open = time.time() < cached["time"].iloc[-1] + INTERVAL_SEC[interval]
+            if age < max_age and candle_open:
+                return cached.tail(limit).reset_index(drop=True)
+            behind = (time.time() - cached["time"].iloc[-1]) / INTERVAL_SEC[interval]
+            if behind < BINANCE_PAGE - 10:
+                new = _to_df(_fetch_page(interval, int(behind) + 2))
+                df = pd.concat([cached, new]).drop_duplicates("time", keep="last") \
+                       .sort_values("time").tail(MAX_CANDLES).reset_index(drop=True)
+                with _cache_lock:
+                    _cache[interval], _fetched_at[interval] = df, time.time()
+                return df.tail(limit).reset_index(drop=True)
+        df = get_klines(interval, MAX_CANDLES)
+        with _cache_lock:
+            _cache[interval], _fetched_at[interval] = df, time.time()
+        return df.tail(limit).reset_index(drop=True)
+
+
+_smc_cache = {}  # (temporalidad, swing, nº velas) -> (última vela cerrada, resultado)
+
+
+def get_smc(interval: str, df: pd.DataFrame, swing: int) -> dict:
+    """Smart Money solo se recalcula cuando cierra una vela nueva."""
+    key, last_closed = (interval, swing, len(df)), int(df["time"].iloc[-2])
+    hit = _smc_cache.get(key)
+    if hit and hit[0] == last_closed:
+        return hit[1]
+    result = compute_smc(df, swing)
+    _smc_cache[key] = (last_closed, result)
+    return result
+
+
+def keep_warm(swing: int = 10):
+    """Precarga todas las temporalidades y las mantiene al día en segundo plano."""
+    def warm(iv):
+        try:
+            get_smc(iv, get_candles(iv, MAX_CANDLES, max_age=0), swing)
+        except Exception as e:  # noqa: BLE001
+            print(f"[precarga {iv}] {e}")
+
+    order = ["15m", "1m", "5m", "1h", "4h", "1d"]  # primero la temporalidad por defecto
+    while True:
+        with ThreadPoolExecutor(max_workers=len(order)) as pool:
+            list(pool.map(warm, order))
+        time.sleep(REFRESH_EVERY)
+
+
+def _num(v):
+    if v is None:
+        return None
+    v = float(v)
+    return None if math.isnan(v) else round(v, 2)
+
+
+def compute_smc(df: pd.DataFrame, swing_length: int) -> dict:
+    """Calcula SMC solo con velas cerradas (se excluye la vela en curso)."""
+    closed = df.iloc[:-1].reset_index(drop=True)
+    ohlc = closed[["open", "high", "low", "close", "volume"]]
+    times = closed["time"].tolist()
+    n = len(closed)
+
+    def t(i):
+        if i is None or (isinstance(i, float) and math.isnan(i)):
+            return None
+        i = int(i)
+        return times[i] if 0 < i < n else None
+
+    swings = smc.swing_highs_lows(ohlc, swing_length=swing_length)
+    # El paquete fuerza un pico en la primera y la última vela para alternar;
+    # no son picos reales, así que se eliminan antes de calcular lo demás.
+    swings.loc[[0, n - 1], ["HighLow", "Level"]] = np.nan
+
+    fvg = smc.fvg(ohlc)
+    struct = smc.bos_choch(ohlc, swings, close_break=True)
+    ob = smc.ob(ohlc, swings)
+    liq = smc.liquidity(ohlc, swings)
+
+    out = {"swings": [], "fvg": [], "structure": [], "ob": [], "liquidity": []}
+    for i in range(n):
+        if not math.isnan(swings["HighLow"][i]):
+            out["swings"].append({"time": times[i], "dir": int(swings["HighLow"][i]),
+                                  "level": _num(swings["Level"][i])})
+        if not math.isnan(fvg["FVG"][i]):
+            out["fvg"].append({"time": times[i], "dir": int(fvg["FVG"][i]),
+                               "top": _num(fvg["Top"][i]), "bottom": _num(fvg["Bottom"][i]),
+                               "mitigated": t(fvg["MitigatedIndex"][i])})
+        for kind in ("BOS", "CHOCH"):
+            if not math.isnan(struct[kind][i]):
+                out["structure"].append({"time": times[i], "kind": kind,
+                                         "dir": int(struct[kind][i]),
+                                         "level": _num(struct["Level"][i]),
+                                         "broken": t(struct["BrokenIndex"][i])})
+        if not math.isnan(ob["OB"][i]):
+            out["ob"].append({"time": times[i], "dir": int(ob["OB"][i]),
+                              "top": _num(ob["Top"][i]), "bottom": _num(ob["Bottom"][i]),
+                              "strength": _num(ob["Percentage"][i]),
+                              "mitigated": t(ob["MitigatedIndex"][i])})
+        if not math.isnan(liq["Liquidity"][i]):
+            out["liquidity"].append({"time": times[i], "dir": int(liq["Liquidity"][i]),
+                                     "level": _num(liq["Level"][i]),
+                                     "end": t(liq["End"][i]),
+                                     "swept": t(liq["Swept"][i])})
+    return out
+
+
+class Handler(SimpleHTTPRequestHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, directory=WEB_DIR, **kwargs)
+
+    def log_message(self, fmt, *args):  # silenciar el log de cada petición
+        pass
+
+    def do_GET(self):
+        url = urllib.parse.urlparse(self.path)
+        if url.path == "/api/data":
+            return self.api_data(urllib.parse.parse_qs(url.query))
+        return super().do_GET()
+
+    def api_data(self, q):
+        try:
+            interval = q.get("interval", ["1h"])[0]
+            if interval not in INTERVALS:
+                raise ValueError(f"Temporalidad no válida: {interval}")
+            limit = max(100, min(MAX_CANDLES, int(q.get("limit", [str(MAX_CANDLES)])[0])))
+            swing = max(2, min(100, int(q.get("swing", ["10"])[0])))
+            # El precio en vivo llega al navegador por WebSocket; aquí basta una
+            # caché de hasta 2 minutos (se renueva igual si cerró una vela).
+            df = get_candles(interval, limit, max_age=120)
+            body = {"symbol": SYMBOL, "interval": interval,
+                    "candles": df.to_dict("records"),
+                    "smc": get_smc(interval, df, swing)}
+            self._json(200, body)
+        except Exception as e:  # noqa: BLE001
+            self._json(500, {"error": str(e)})
+
+    def _json(self, code, body):
+        data = json.dumps(body).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
+
+class ExclusiveServer(ThreadingHTTPServer):
+    # Sin esto, en Windows dos copias pueden escuchar en el mismo puerto a la vez.
+    allow_reuse_address = False
+    daemon_threads = True
+
+    def server_bind(self):
+        if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):  # solo existe en Windows
+            self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+        super().server_bind()
+
+
+def main():
+    port = int(sys.argv[sys.argv.index("--port") + 1]) if "--port" in sys.argv else PORT
+    url = f"http://{HOST}:{port}"
+    try:
+        server = ExclusiveServer((HOST, port), Handler)
+    except OSError:
+        print(f"Trading Pedro ya está abierto en {url}; abriendo el navegador.")
+        if "--no-browser" not in sys.argv:
+            webbrowser.open(url)
+        return
+    print(f"Trading Pedro funcionando en {url}  (Ctrl+C para salir)")
+    threading.Thread(target=keep_warm, daemon=True).start()
+    if "--no-browser" not in sys.argv:
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nTrading Pedro detenido.")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Trading Pedro</title>
+  <link rel="icon" href="logo.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <img src="logo.svg" alt="" width="30" height="30">
+      <span class="name">Trading <b>Pedro</b></span>
+    </div>
+    <div class="ticker">
+      <span class="sym">BTC/USDT</span>
+      <span id="price" class="price mono">—</span>
+      <span id="chg" class="chg mono">—</span>
+    </div>
+    <div class="tfs" id="tfs">
+      <button data-tf="1m">1m</button>
+      <button data-tf="5m">5m</button>
+      <button data-tf="15m">15m</button>
+      <button data-tf="1h">1h</button>
+      <button data-tf="4h">4h</button>
+      <button data-tf="1d">1D</button>
+    </div>
+    <div class="status" id="status"><span class="dot"></span><span class="txt">Conectando…</span></div>
+  </header>
+
+  <main class="layout">
+    <nav class="tools" id="tools" aria-label="Herramientas de dibujo">
+      <button data-tool="cursor" title="Cursor (Esc)">
+        <svg viewBox="0 0 24 24"><path d="M5 3l14 8-6 2-3 6z"/></svg>
+      </button>
+      <button data-tool="hline" title="Línea horizontal: haz clic en un precio">
+        <svg viewBox="0 0 24 24"><path d="M3 12h18"/><circle cx="12" cy="12" r="2"/></svg>
+      </button>
+      <button data-tool="trend" title="Línea de tendencia: dos clics sobre velas">
+        <svg viewBox="0 0 24 24"><path d="M4 19L20 5"/><circle cx="4" cy="19" r="2"/><circle cx="20" cy="5" r="2"/></svg>
+      </button>
+      <button data-tool="alert" title="Alerta: haz clic en un precio">
+        <svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+      </button>
+      <span class="sep"></span>
+      <button id="clear-drawings" title="Borrar todos los dibujos">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></svg>
+      </button>
+    </nav>
+
+    <section class="charts">
+      <div class="pane main" id="chart-main">
+        <canvas id="overlay"></canvas>
+        <div class="legend mono" id="legend"></div>
+        <div class="hint" id="hint"></div>
+      </div>
+      <div class="pane sub" id="chart-rsi"><span class="pane-label">RSI 14</span></div>
+      <div class="pane sub" id="chart-macd"><span class="pane-label">MACD 12 · 26 · 9</span></div>
+    </section>
+
+    <aside class="side">
+      <section class="card">
+        <h2>Smart Money</h2>
+        <div id="smc-summary" class="summary"><p class="muted">Calculando…</p></div>
+      </section>
+
+      <section class="card">
+        <h2>Mostrar en el gráfico</h2>
+        <div class="checks">
+          <label><input type="checkbox" data-show="ob"> <i class="sw ob"></i>Order blocks</label>
+          <label><input type="checkbox" data-show="fvg"> <i class="sw fvg"></i>FVG</label>
+          <label><input type="checkbox" data-show="structure"> <i class="sw st"></i>BOS / CHOCH</label>
+          <label><input type="checkbox" data-show="swings"> <i class="sw swg"></i>Swings (HH/HL/LH/LL)</label>
+          <label><input type="checkbox" data-show="liquidity"> <i class="sw liq"></i>Liquidez</label>
+          <label class="strong"><input type="checkbox" data-show="activeOnly"> Solo zonas vigentes</label>
+        </div>
+        <div class="slider">
+          <label for="swing">Sensibilidad de swings <b id="swing-val"></b></label>
+          <input type="range" id="swing" min="3" max="50" step="1">
+          <div class="scale muted"><span>más detalle</span><span>solo lo grande</span></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Indicadores</h2>
+        <div class="checks two">
+          <label><input type="checkbox" data-show="ema20"> <i class="sw" style="background:#F5B841"></i>EMA 20</label>
+          <label><input type="checkbox" data-show="ema50"> <i class="sw" style="background:#5AA9FF"></i>EMA 50</label>
+          <label><input type="checkbox" data-show="sma200"> <i class="sw" style="background:#B48CFF"></i>SMA 200</label>
+          <label><input type="checkbox" data-show="ema600"> <i class="sw" style="background:#FF7A45"></i>EMA 600</label>
+          <label><input type="checkbox" data-show="bb"> <i class="sw" style="background:#8D97AB"></i>Bollinger</label>
+          <label><input type="checkbox" data-show="vol"> Volumen</label>
+          <label><input type="checkbox" data-show="rsi"> RSI</label>
+          <label><input type="checkbox" data-show="macd"> MACD</label>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Alertas de precio</h2>
+        <form id="alert-form" class="alert-form">
+          <input id="alert-price" type="number" step="0.01" placeholder="Precio, ej. 82941" inputmode="decimal">
+          <button type="submit">Añadir</button>
+        </form>
+        <ul id="alert-list" class="alert-list"></ul>
+      </section>
+
+      <p class="disclaimer">Análisis automático sobre datos de Binance. Describe el pasado del precio; no es una recomendación de inversión.</p>
+    </aside>
+  </main>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+
+  <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
