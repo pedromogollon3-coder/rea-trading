@@ -11,6 +11,7 @@ import socket
 import sys
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -31,7 +32,8 @@ SYMBOL = "BTCUSDT"
 INTERVALS = {"1m", "5m", "15m", "1h", "4h", "1d"}
 # data-api.binance.vision es el servidor de datos públicos de Binance; api.binance.com
 # queda como respaldo (desde algunas ubicaciones responde 451).
-BINANCE_HOSTS = ["https://data-api.binance.vision", "https://api.binance.com"]
+BINANCE_HOSTS = ["https://data-api.binance.vision", "https://api.binance.com",
+                 "https://api-gcp.binance.com", "https://api1.binance.com"]
 INTERVAL_SEC = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
 
 MAX_CANDLES = 3000
@@ -42,7 +44,7 @@ _cache_lock = threading.Lock()
 
 
 def _fetch_page(interval: str, limit: int, end_time=None) -> list:
-    last_err = None
+    errors = []
     for host in BINANCE_HOSTS:
         url = f"{host}/api/v3/klines?symbol={SYMBOL}&interval={interval}&limit={limit}"
         if end_time is not None:
@@ -50,9 +52,15 @@ def _fetch_page(interval: str, limit: int, end_time=None) -> list:
         try:
             with urllib.request.urlopen(url, timeout=20) as r:
                 return json.load(r)
+        except urllib.error.HTTPError as e:
+            try:
+                body = e.read().decode("utf-8", "replace")[:150]
+            except Exception:  # noqa: BLE001
+                body = ""
+            errors.append(f"{host.split('//')[1]} -> HTTP {e.code} {body}")
         except Exception as e:  # noqa: BLE001
-            last_err = e
-    raise RuntimeError(f"No se pudo descargar de Binance: {last_err}")
+            errors.append(f"{host.split('//')[1]} -> {e}")
+    raise RuntimeError("No se pudo descargar de Binance: " + " | ".join(errors))
 
 
 def _to_df(raw: list) -> pd.DataFrame:
