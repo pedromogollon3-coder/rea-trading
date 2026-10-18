@@ -97,6 +97,32 @@ button { font: inherit; color: inherit; cursor: pointer; }
 }
 .hint.show { display: block; }
 .pane.drawing { cursor: crosshair; }
+/* edición de líneas de tendencia: el cursor indica qué se puede arrastrar */
+#chart-main.over-line * { cursor: pointer !important; }
+#chart-main.over-handle *, #chart-main.dragging * { cursor: move !important; }
+.draw-bar {
+  position: absolute; top: 8px; left: 50%; transform: translateX(-50%); z-index: 12;
+  display: flex; align-items: center; gap: 4px; padding: 4px 6px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
+.draw-bar[hidden] { display: none; }
+#chart-main .draw-bar * { cursor: pointer !important; }
+.draw-bar button {
+  border: 0; background: none; color: var(--muted); height: 26px; min-width: 26px;
+  border-radius: 6px; padding: 0 6px; font-size: 12px; display: grid; place-items: center;
+}
+.draw-bar button:hover { background: rgba(255, 255, 255, 0.06); color: var(--text); }
+.draw-bar button.on { color: var(--accent); background: rgba(245, 184, 65, 0.14); }
+.draw-bar [data-color], .draw-bar [data-color]:hover {
+  min-width: 0; width: 18px; height: 18px; padding: 0; border-radius: 50%; background: var(--c);
+}
+.draw-bar [data-color].on { background: var(--c); box-shadow: 0 0 0 2px var(--panel-2), 0 0 0 4px var(--c); }
+.draw-bar .sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; }
+.draw-bar svg {
+  width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2;
+  stroke-linecap: round; stroke-linejoin: round;
+}
 .pane.main.loading::after {
   content: "Cargando…"; position: absolute; top: 50%; left: 50%; z-index: 12;
   transform: translate(-50%, -50%);

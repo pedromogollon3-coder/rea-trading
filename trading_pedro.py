@@ -222,6 +222,13 @@ class Handler(SimpleHTTPRequestHandler):
     def log_message(self, fmt, *args):  # silenciar el log de cada petición
         pass
 
+    def end_headers(self):
+        # La web se revalida siempre, para que tras una actualización el navegador
+        # no siga usando una versión vieja de app.js o style.css.
+        if not self.path.startswith("/api/"):
+            self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
         if url.path == "/api/data":

@@ -14,6 +14,7 @@
     bull: '#2ECC8F', bear: '#F0506E', accent: '#F5B841', text: '#AEB7C8',
     grid: 'rgba(255,255,255,0.035)', border: 'rgba(255,255,255,0.08)',
     ema20: '#F5B841', ema50: '#5AA9FF', sma200: '#B48CFF', ema600: '#FF7A45', bb: 'rgba(141,151,171,0.75)',
+    blue: '#5AA9FF', bg: '#0B0F16',
   };
 
   const DEFAULT_SHOW = {
@@ -31,6 +32,10 @@
     alerts: store.get('alerts', []),
     tool: 'cursor',
     pending: null,
+    ghost: null,     // punto bajo el ratón mientras se dibuja una línea de tendencia
+    measure: null,   // medición en curso o fijada { t1, p1, t2, p2, fixed }
+    selected: null,  // línea de tendencia seleccionada
+    hover: null,     // línea de tendencia bajo el ratón
     lastPrice: null,
   };
 
@@ -47,6 +52,16 @@
     const d = new Date(t * 1000);
     return `${d.getDate()} ${MESES[d.getMonth()]} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
+  const fmtPct = (v) => v.toFixed(2).replace('.', ',');
+  const fmtVol = (v) => {
+    const [d, u] = v >= 1e9 ? [1e9, 'B'] : v >= 1e6 ? [1e6, 'M'] : v >= 1e3 ? [1e3, 'K'] : [1, ''];
+    return (v / d).toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + u;
+  };
+  const fmtDur = (s) => {
+    const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+    return [d && d + 'd', h && h + 'h', m && m + 'm'].filter(Boolean).join(' ') || '0m';
+  };
+  const signed = (v, f) => (v > 0 ? '+' : v < 0 ? '−' : '') + f(Math.abs(v));
   // Las marcas de año, mes y día se colocan en la medianoche UTC; se rotulan en UTC
   // para que no aparezca el día anterior en zonas horarias como la de Venezuela.
   const tickFmt = (t, type) => {
@@ -285,6 +300,95 @@
     return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
   };
 
+  // Posición lógica (índice de vela, admite decimales) de cualquier instante. Así los
+  // dibujos se ven en todas las temporalidades y también en la zona futura del gráfico.
+  const IV_SEC = { '1m': 60, '5m': 300, '15m': 900, '1h': 3600, '4h': 14400, '1d': 86400 };
+  const ivSec = () => IV_SEC[state.dataInterval || state.interval] || 60;
+  function timeToLogical(t) {
+    const cs = state.candles, n = cs.length;
+    if (!n || t == null) return null;
+    if (t >= cs[n - 1].time) return n - 1 + (t - cs[n - 1].time) / ivSec();
+    if (t <= cs[0].time) return (t - cs[0].time) / ivSec();
+    let lo = 0, hi = n - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (cs[m].time <= t) lo = m; else hi = m; }
+    return lo + (t - cs[lo].time) / (cs[hi].time - cs[lo].time);
+  }
+  function logicalToTime(l) {
+    const cs = state.candles, n = cs.length;
+    if (!n || l == null) return null;
+    if (l >= n - 1) return Math.round(cs[n - 1].time + (l - (n - 1)) * ivSec());
+    if (l <= 0) return Math.round(cs[0].time + l * ivSec());
+    const i = Math.floor(l);
+    return Math.round(cs[i].time + (l - i) * (cs[i + 1].time - cs[i].time));
+  }
+  const XL = (t) => { const l = timeToLogical(t); return l == null ? null : chart.timeScale().logicalToCoordinate(l); };
+  // Punto del gráfico bajo unas coordenadas; `snap` lo ajusta a la vela más cercana.
+  function pointAt(x, y, snap = true) {
+    let l = chart.timeScale().coordinateToLogical(x);
+    const p = candles.coordinateToPrice(y);
+    if (l == null || p == null) return null;
+    if (snap) l = Math.round(l);
+    return { t: logicalToTime(l), p };
+  }
+  function paneSize() {
+    const ts = chart.timeScale();
+    return {
+      w: mainEl.clientWidth - chart.priceScale('right').width(),
+      h: mainEl.clientHeight - (ts.options().visible ? ts.height() : 0),
+    };
+  }
+  // Diferencia de precio, %, barras, duración y volumen entre dos puntos.
+  function spanStats(t1, p1, t2, p2) {
+    const l1 = timeToLogical(t1), l2 = timeToLogical(t2);
+    const bars = Math.round(l2 - l1), diff = p2 - p1;
+    let vol = 0;
+    const a = Math.max(0, Math.ceil(Math.min(l1, l2))), b = Math.min(state.candles.length - 1, Math.floor(Math.max(l1, l2)));
+    for (let i = a; i <= b; i++) vol += state.candles[i].volume;
+    return { bars, diff, pct: p1 ? (diff / p1) * 100 : 0, vol, secs: Math.abs(bars) * ivSec() };
+  }
+  // Coordenadas en pantalla de una línea de tendencia (con su extensión, si la tiene).
+  function trendGeom(d) {
+    const x1 = XL(d.t1), x2 = XL(d.t2), y1 = candles.priceToCoordinate(d.p1), y2 = candles.priceToCoordinate(d.p2);
+    if ([x1, x2, y1, y2].some((v) => v == null)) return null;
+    let ex = x2, ey = y2;
+    if (d.ext && Math.abs(x2 - x1) > 0.5) {
+      ex = x2 > x1 ? Math.max(x2, paneSize().w) : Math.min(x2, 0);
+      ey = y1 + ((y2 - y1) * (ex - x1)) / (x2 - x1);
+    }
+    return { x1, y1, x2, y2, ex, ey };
+  }
+
+  // Etiqueta con fondo; ax: 'left' | 'center' | 'right', ay: 'top' | 'middle' | 'bottom'.
+  function tag(lines, x, y, bg, fg, ax, ay) {
+    ctx.font = '600 12px Inter, system-ui, sans-serif';
+    const lh = 17, pad = 8, { w: pw, h: ph } = paneSize();
+    const w = Math.max(...lines.map((s) => ctx.measureText(s).width)) + pad * 2, h = lines.length * lh + pad;
+    let left = ax === 'center' ? x - w / 2 : ax === 'right' ? x - w : x;
+    // si no cabe a un lado del punto, se pasa al otro (x viene separado 12 px del punto)
+    if (ax === 'left' && left + w > pw - 4) left = x - 24 - w;
+    if (ax === 'right' && left < 4) left = x + 24;
+    let top = ay === 'bottom' ? y - h : ay === 'middle' ? y - h / 2 : y;
+    left = Math.max(4, Math.min(pw - w - 4, left)); top = Math.max(4, Math.min(ph - h - 4, top));
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(left, top, w, h, 5); else ctx.rect(left, top, w, h);
+    ctx.fill();
+    ctx.fillStyle = fg; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    lines.forEach((s, i) => ctx.fillText(s, left + w / 2, top + pad / 2 + lh * i + lh / 2));
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
+  function arrow(x1, y1, x2, y2) {
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    if (len < 10) return;
+    const a = Math.atan2(y2 - y1, x2 - x1), s = 7;
+    ctx.beginPath();
+    ctx.moveTo(x2 - s * Math.cos(a - 0.5), y2 - s * Math.sin(a - 0.5));
+    ctx.lineTo(x2, y2);
+    ctx.lineTo(x2 - s * Math.cos(a + 0.5), y2 - s * Math.sin(a + 0.5));
+    ctx.stroke();
+  }
+
   function drawOverlay() {
     const w = mainEl.clientWidth, h = mainEl.clientHeight, dpr = window.devicePixelRatio || 1;
     if (overlay.width !== Math.round(w * dpr) || overlay.height !== Math.round(h * dpr)) {
@@ -359,17 +463,53 @@
       });
     }
 
-    // líneas de tendencia del usuario
-    ctx.strokeStyle = C.accent; ctx.fillStyle = C.accent; ctx.lineWidth = 2;
+    // líneas de tendencia del usuario; la seleccionada o bajo el ratón muestra sus
+    // extremos (para estirarla) y la diferencia de precio entre ellos
     state.drawings.filter((d) => d.type === 't').forEach((d) => {
-      const x1 = X(d.t1), x2 = X(d.t2), y1 = Y(d.p1), y2 = Y(d.p2);
-      if ([x1, x2, y1, y2].some((v) => v == null)) return;
-      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-      [[x1, y1], [x2, y2]].forEach(([x, y]) => { ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill(); });
+      const g = trendGeom(d); if (!g) return;
+      ctx.strokeStyle = d.color || C.accent; ctx.lineWidth = d.width || 2;
+      ctx.beginPath(); ctx.moveTo(g.x1, g.y1); ctx.lineTo(g.ex, g.ey); ctx.stroke();
+      if (d !== state.selected && d !== state.hover) return;
+      ctx.lineWidth = 2; ctx.strokeStyle = C.blue; ctx.fillStyle = C.bg;
+      [[g.x1, g.y1], [g.x2, g.y2]].forEach(([x, y]) => {
+        ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      });
+      const st = spanStats(d.t1, d.p1, d.t2, d.p2);
+      tag([`⇕ ${signed(st.diff, fmtPrice)} (${signed(st.pct, fmtPct)}%) · ${st.bars} barras`],
+        g.x2 + (g.x2 >= g.x1 ? 12 : -12), g.y2, 'rgba(22,30,45,0.92)', '#D5DCEA', g.x2 >= g.x1 ? 'left' : 'right', 'middle');
     });
     if (state.pending) {
-      const x = X(state.pending.t), y = Y(state.pending.p);
-      if (x != null && y != null) { ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill(); }
+      const x = XL(state.pending.t), y = Y(state.pending.p);
+      ctx.fillStyle = C.accent; ctx.strokeStyle = C.accent;
+      if (x != null && y != null) {
+        ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fill();
+        const gx = state.ghost && XL(state.ghost.t), gy = state.ghost && Y(state.ghost.p);
+        if (gx != null && gy != null) {
+          ctx.lineWidth = 2; ctx.setLineDash([5, 4]);
+          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(gx, gy); ctx.stroke(); ctx.setLineDash([]);
+        }
+      }
+    }
+
+    // medición (como la herramienta "Medir" de TradingView)
+    const m = state.measure;
+    if (m) {
+      const x1 = XL(m.t1), x2 = XL(m.t2), y1 = Y(m.p1), y2 = Y(m.p2);
+      if (![x1, x2, y1, y2].some((v) => v == null)) {
+        const up = m.p2 >= m.p1, col = up ? C.blue : C.bear;
+        ctx.fillStyle = rgba(col, 0.2);
+        ctx.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+        ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+        const xm = (x1 + x2) / 2, ym = (y1 + y2) / 2;
+        arrow(xm, y1, xm, y2);
+        arrow(x1, ym, x2, ym);
+        const st = spanStats(m.t1, m.p1, m.t2, m.p2);
+        tag([
+          `${signed(st.diff, fmtPrice)} (${signed(st.pct, fmtPct)}%)`,
+          `${st.bars} barras, ${fmtDur(st.secs)}`,
+          `Vol. ${fmtVol(st.vol)}`,
+        ], xm, up ? Math.min(y1, y2) - 8 : Math.max(y1, y2) + 8, rgba(col, 0.95), '#FFFFFF', 'center', up ? 'bottom' : 'top');
+      }
     }
     ctx.restore();
   }
@@ -413,11 +553,14 @@
 
   const HINTS = {
     hline: 'Haz clic en el precio donde quieres la línea',
-    trend: 'Clic en el primer punto (sobre una vela)…',
+    trend: 'Clic en el primer punto…',
+    measure: 'Clic en el punto inicial de la medida…',
     alert: 'Haz clic en el precio de la alerta',
   };
   function setTool(tool) {
-    state.tool = tool; state.pending = null;
+    state.tool = tool; state.pending = null; state.ghost = null;
+    if (state.measure && !state.measure.fixed) state.measure = null;
+    if (tool !== 'cursor') select(null);
     $$('#tools [data-tool]').forEach((b) => b.classList.toggle('on', b.dataset.tool === tool));
     mainEl.classList.toggle('drawing', tool !== 'cursor');
     const hint = $('#hint');
@@ -425,24 +568,156 @@
     hint.classList.toggle('show', tool !== 'cursor');
   }
 
-  chart.subscribeClick((param) => {
-    if (state.tool === 'cursor' || !param.point) return;
-    const price = candles.coordinateToPrice(param.point.y);
+  // Clic sobre el gráfico (x, y en píxeles del panel). Shift + clic empieza una medida,
+  // como en TradingView.
+  function onChartClick(x, y, shift) {
+    if (state.tool === 'cursor' && shift) { state.measure = null; setTool('measure'); }
+    if (state.tool === 'cursor') return;
+    const price = candles.coordinateToPrice(y);
     if (price == null) return;
     if (state.tool === 'hline') {
       state.drawings.push({ type: 'h', price }); saveDrawings(); renderPriceLines(); setTool('cursor');
     } else if (state.tool === 'trend') {
-      if (param.time == null) return;
+      const pt = pointAt(x, y);
+      if (!pt) return;
       if (!state.pending) {
-        state.pending = { t: param.time, p: price };
+        state.pending = pt;
         $('#hint').textContent = 'Ahora clic en el segundo punto';
       } else {
-        state.drawings.push({ type: 't', t1: state.pending.t, p1: state.pending.p, t2: param.time, p2: price });
-        saveDrawings(); setTool('cursor');
+        const d = { type: 't', t1: state.pending.t, p1: state.pending.p, t2: pt.t, p2: pt.p, color: C.accent, width: 2 };
+        state.drawings.push(d);
+        saveDrawings(); setTool('cursor'); select(d);
+      }
+    } else if (state.tool === 'measure') {
+      const pt = pointAt(x, y);
+      if (!pt) return;
+      if (!state.measure) {
+        state.measure = { t1: pt.t, p1: pt.p, t2: pt.t, p2: pt.p, fixed: false };
+        $('#hint').textContent = 'Mueve el ratón y haz clic para fijar la medida';
+      } else {
+        Object.assign(state.measure, { t2: pt.t, p2: pt.p, fixed: true });
+        setTool('cursor');
       }
     } else if (state.tool === 'alert') {
       addAlert(Math.round(price * 100) / 100); setTool('cursor');
     }
+  }
+
+  // La medida y la vista previa de la línea siguen al ratón.
+  chart.subscribeCrosshairMove((param) => {
+    if (!param.point) return;
+    const m = state.measure;
+    if (m && !m.fixed) {
+      const pt = pointAt(param.point.x, param.point.y);
+      if (pt) { m.t2 = pt.t; m.p2 = pt.p; }
+    }
+    if (state.tool === 'trend' && state.pending) state.ghost = pointAt(param.point.x, param.point.y);
+  });
+
+  // ---------- edición de líneas de tendencia (seleccionar, arrastrar, borrar) ----------
+  const bar = $('#draw-bar');
+  let drag = null;
+  const localXY = (e) => { const r = mainEl.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  function distToSeg(px, py, x1, y1, x2, y2) {
+    const dx = x2 - x1, dy = y2 - y1, len2 = dx * dx + dy * dy;
+    const k = len2 ? Math.max(0, Math.min(1, ((px - x1) * dx + (py - y1) * dy) / len2)) : 0;
+    return Math.hypot(px - (x1 + k * dx), py - (y1 + k * dy));
+  }
+  // Qué parte de qué línea hay bajo el ratón: part 1/2 = extremos, 0 = el trazo.
+  function hitTest(x, y) {
+    const list = state.drawings.filter((d) => d.type === 't').reverse();
+    const order = state.selected ? [state.selected, ...list.filter((d) => d !== state.selected)] : list;
+    const geoms = order.map((d) => [d, trendGeom(d)]).filter(([, g]) => g);
+    for (const [d, g] of geoms) {
+      if (Math.hypot(x - g.x1, y - g.y1) <= 8) return { d, part: 1 };
+      if (Math.hypot(x - g.x2, y - g.y2) <= 8) return { d, part: 2 };
+    }
+    for (const [d, g] of geoms) if (distToSeg(x, y, g.x1, g.y1, g.ex, g.ey) <= 6) return { d, part: 0 };
+    return null;
+  }
+  function setHover(hit) {
+    state.hover = hit ? hit.d : null;
+    mainEl.classList.toggle('over-line', !!hit && hit.part === 0);
+    mainEl.classList.toggle('over-handle', !!hit && hit.part !== 0);
+  }
+  function syncBar() {
+    const d = state.selected;
+    bar.hidden = !d;
+    if (!d) return;
+    $$('#draw-bar [data-color]').forEach((b) => b.classList.toggle('on', b.dataset.color === (d.color || C.accent)));
+    bar.querySelector('[data-width]').textContent = `${d.width || 2}px`;
+    bar.querySelector('[data-ext]').classList.toggle('on', !!d.ext);
+  }
+  function select(d) { state.selected = d; syncBar(); }
+  function deleteSelected() {
+    state.drawings = state.drawings.filter((d) => d !== state.selected);
+    select(null); setHover(null); saveDrawings();
+  }
+
+  // Los clics se detectan aquí y no con chart.subscribeClick: el gráfico ignora un
+  // segundo clic rápido lejos del primero (lo trata como un doble clic fallido).
+  // Se escucha en fase de captura para que, al agarrar una línea, el gráfico no se desplace.
+  let downAt = null;
+  mainEl.addEventListener('pointerdown', (e) => {
+    downAt = null;
+    if (e.button !== 0 || e.target.closest('#draw-bar')) return;
+    const { x, y } = localXY(e), pane = paneSize();
+    if (x > pane.w || y > pane.h) return;
+    downAt = { x, y, shift: e.shiftKey };
+    if (state.tool !== 'cursor' || e.shiftKey) return;
+    if (state.measure && state.measure.fixed) state.measure = null; // el siguiente clic quita la medida
+    const hit = hitTest(x, y);
+    if (!hit) { if (state.selected) select(null); return; }
+    e.preventDefault(); e.stopPropagation();
+    select(hit.d);
+    drag = { ...hit, orig: { ...hit.d }, startL: chart.timeScale().coordinateToLogical(x), startP: candles.coordinateToPrice(y), moved: false };
+    chart.applyOptions({ handleScroll: false, handleScale: false });
+    mainEl.setPointerCapture(e.pointerId);
+    mainEl.classList.add('dragging');
+  }, true);
+
+  mainEl.addEventListener('pointermove', (e) => {
+    if (e.target.closest('#draw-bar')) return;
+    const { x, y } = localXY(e);
+    if (!drag) { setHover(state.tool === 'cursor' ? hitTest(x, y) : null); return; }
+    const l = chart.timeScale().coordinateToLogical(x), p = candles.coordinateToPrice(y);
+    if (l == null || p == null || drag.startL == null || drag.startP == null) return;
+    const d = drag.d, o = drag.orig;
+    if (drag.part === 1) { d.t1 = logicalToTime(Math.round(l)); d.p1 = p; }
+    else if (drag.part === 2) { d.t2 = logicalToTime(Math.round(l)); d.p2 = p; }
+    else {
+      const dl = Math.round(l - drag.startL), dp = p - drag.startP;
+      d.t1 = logicalToTime(timeToLogical(o.t1) + dl); d.p1 = o.p1 + dp;
+      d.t2 = logicalToTime(timeToLogical(o.t2) + dl); d.p2 = o.p2 + dp;
+    }
+    drag.moved = true;
+  });
+
+  const endDrag = () => {
+    if (!drag) return;
+    if (drag.moved) saveDrawings();
+    drag = null;
+    chart.applyOptions({ handleScroll: true, handleScale: true });
+    mainEl.classList.remove('dragging');
+  };
+  mainEl.addEventListener('pointerup', (e) => {
+    const wasDrag = !!drag, down = downAt;
+    endDrag(); downAt = null;
+    if (wasDrag || !down) return;
+    const { x, y } = localXY(e);
+    if (Math.hypot(x - down.x, y - down.y) < 5) onChartClick(x, y, down.shift); // clic sin arrastrar
+  }, true);
+  mainEl.addEventListener('pointercancel', () => { endDrag(); downAt = null; });
+  mainEl.addEventListener('pointerleave', () => { if (!drag) setHover(null); });
+
+  bar.addEventListener('click', (e) => {
+    const b = e.target.closest('button'), d = state.selected;
+    if (!b || !d) return;
+    if (b.dataset.color) d.color = b.dataset.color;
+    else if ('width' in b.dataset) d.width = ((d.width || 2) % 4) + 1;
+    else if ('ext' in b.dataset) d.ext = !d.ext;
+    else if ('del' in b.dataset) { deleteSelected(); return; }
+    saveDrawings(); syncBar();
   });
 
   // ---------- alertas ----------
@@ -624,7 +899,7 @@
     if (b.dataset.tf === state.interval) return;
     state.interval = b.dataset.tf; store.set('interval', state.interval);
     $$('#tfs button').forEach((x) => x.classList.toggle('on', x === b));
-    state.lastPrice = null;
+    state.lastPrice = null; state.measure = null;
     load(false); connect();
   }));
   $$('#tfs button').forEach((x) => x.classList.toggle('on', x.dataset.tf === state.interval));
@@ -650,9 +925,13 @@
   $('#clear-drawings').addEventListener('click', () => {
     if (!state.drawings.length) return;
     if (!confirm('¿Borrar todas las líneas dibujadas?')) return;
-    state.drawings = []; saveDrawings(); renderPriceLines();
+    state.drawings = []; select(null); setHover(null); saveDrawings(); renderPriceLines();
   });
-  window.addEventListener('keydown', (e) => { if (e.key === 'Escape') setTool('cursor'); });
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { setTool('cursor'); state.measure = null; select(null); return; }
+    if (e.target.closest?.('input, textarea')) return;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && state.selected) { e.preventDefault(); deleteSelected(); }
+  });
 
   // ---------- inicio ----------
   setTool('cursor');
