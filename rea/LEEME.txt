@@ -1,0 +1,17 @@
+TRADING PEDRO - grafico BTC/USDT con Smart Money Concepts
+==========================================================
+
+Solo la primera vez:
+  1. Instala Python desde https://www.python.org/downloads/
+     (marca la casilla "Add python.exe to PATH" en el instalador).
+  2. Abre "1_Instalar Trading Pedro.bat" y espera a que diga "Listo".
+
+Cada vez que quieras usarlo:
+  - Abre "Trading Pedro.bat". Se abre solo el navegador en
+    http://127.0.0.1:8050 con el grafico en vivo.
+  - Para apagarlo, cierra la ventana negra.
+
+Notas:
+  - Solo necesita internet; usa los datos publicos de Binance (no pide claves ni cuenta).
+  - Corre en tu propio equipo: nadie mas ve lo que haces.
+  - Es una herramienta de analisis, no un consejo de inversion.

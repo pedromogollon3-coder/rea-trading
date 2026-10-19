@@ -1,0 +1,3 @@
+numpy
+pandas
+smartmoneyconcepts==0.0.27

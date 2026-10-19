@@ -11,6 +11,12 @@ Cada vez que quieras usarlo:
     http://127.0.0.1:8050 con el grafico en vivo.
   - Para apagarlo, cierra la ventana negra.
 
+Si ves una version vieja:
+  - Junto al nombre "Trading Pedro" aparece la version (por ejemplo v1.4).
+  - Si no es la que esperas, cierra TODAS las ventanas negras de Trading Pedro
+    (o reinicia el equipo) y vuelve a abrir "Trading Pedro.bat".
+  - Si recibiste una version nueva, borra la carpeta vieja antes de usar la nueva.
+
 Notas:
   - Solo necesita internet; usa los datos publicos de Binance (no pide claves ni cuenta).
   - Corre en tu propio equipo: nadie mas ve lo que haces.

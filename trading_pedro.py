@@ -7,6 +7,7 @@ Uso:
 import json
 import math
 import os
+import re
 import socket
 import sys
 import threading
@@ -29,6 +30,7 @@ from smartmoneyconcepts import smc
 HOST, PORT = "127.0.0.1", 8050
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 SYMBOL = "BTCUSDT"
+VERSION = "2.7 (18 oct 2026)"  # se muestra en la app; súbela en cada entrega
 INTERVALS = {"1m", "5m", "15m", "1h", "4h", "1d"}
 # data-api.binance.vision es el servidor de datos públicos de Binance; api.binance.com
 # queda como respaldo (desde algunas ubicaciones responde 451).
@@ -43,7 +45,26 @@ _cache = {}  # temporalidad -> DataFrame con las últimas velas
 _cache_lock = threading.Lock()
 
 
+_paused_until = 0.0  # Binance pidió pausar (429/418): no se consulta hasta esta hora
+
+
+def _ban_until(e: urllib.error.HTTPError, body: str) -> float:
+    """Fin del bloqueo según Binance ("IP banned until <ms>"), Retry-After o una pausa prudente."""
+    m = re.search(r"until (\d{13})", body)
+    if m:
+        return int(m.group(1)) / 1000 + 2
+    try:
+        ra = float(e.headers.get("Retry-After") or 0)
+    except ValueError:
+        ra = 0
+    return time.time() + (ra or (300 if e.code == 418 else 60)) + 2
+
+
 def _fetch_page(interval: str, limit: int, end_time=None) -> list:
+    global _paused_until
+    if time.time() < _paused_until:
+        hora = time.strftime("%H:%M", time.localtime(_paused_until))
+        raise RuntimeError(f"Binance limitó las consultas; se reanudan a las {hora}")
     errors = []
     for host in BINANCE_HOSTS:
         url = f"{host}/api/v3/klines?symbol={SYMBOL}&interval={interval}&limit={limit}"
@@ -57,6 +78,12 @@ def _fetch_page(interval: str, limit: int, end_time=None) -> list:
                 body = e.read().decode("utf-8", "replace")[:150]
             except Exception:  # noqa: BLE001
                 body = ""
+            if e.code in (418, 429):
+                # Insistir durante un bloqueo lo alarga: se pausa todo hasta que termine.
+                _paused_until = max(_paused_until, _ban_until(e, body))
+                hora = time.strftime("%H:%M", time.localtime(_paused_until))
+                print(f"[Binance] Pausa por exceso de consultas (HTTP {e.code}) hasta las {hora}.")
+                raise RuntimeError(f"Binance limitó las consultas; se reanudan a las {hora}") from e
             errors.append(f"{host.split('//')[1]} -> HTTP {e.code} {body}")
         except Exception as e:  # noqa: BLE001
             errors.append(f"{host.split('//')[1]} -> {e}")
@@ -233,6 +260,8 @@ class Handler(SimpleHTTPRequestHandler):
         url = urllib.parse.urlparse(self.path)
         if url.path == "/api/data":
             return self.api_data(urllib.parse.parse_qs(url.query))
+        if url.path == "/api/version":
+            return self._json(200, {"version": VERSION})
         return super().do_GET()
 
     def api_data(self, q):
@@ -273,15 +302,35 @@ class ExclusiveServer(ThreadingHTTPServer):
         super().server_bind()
 
 
+def running_version(url: str):
+    """Versión de la copia que ya ocupa el puerto (None si es antigua o no responde)."""
+    try:
+        with urllib.request.urlopen(f"{url}/api/version", timeout=3) as r:
+            return json.load(r).get("version")
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def main():
     port = int(sys.argv[sys.argv.index("--port") + 1]) if "--port" in sys.argv else PORT
     url = f"http://{HOST}:{port}"
     try:
         server = ExclusiveServer((HOST, port), Handler)
     except OSError:
-        print(f"Trading Pedro ya está abierto en {url}; abriendo el navegador.")
-        if "--no-browser" not in sys.argv:
-            webbrowser.open(url)
+        running = running_version(url)
+        if running == VERSION:
+            print(f"Trading Pedro ya está abierto en {url}; abriendo el navegador.")
+            if "--no-browser" not in sys.argv:
+                webbrowser.open(url)
+        else:
+            print("=" * 64)
+            print(f"  Ya hay OTRA copia de Trading Pedro abierta ({running or 'versión antigua'}).")
+            print(f"  Esta es la versión {VERSION}.")
+            print()
+            print("  Cierra todas las ventanas negras de Trading Pedro")
+            print("  y vuelve a abrir este archivo.")
+            print("  Si no encuentras la ventana, reinicia el equipo.")
+            print("=" * 64)
         return
     print(f"Trading Pedro funcionando en {url}  (Ctrl+C para salir)")
     threading.Thread(target=keep_warm, daemon=True).start()
