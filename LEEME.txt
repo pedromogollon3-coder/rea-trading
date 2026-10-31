@@ -1,10 +1,21 @@
-TRADING PEDRO - grafico BTC/USDT con Smart Money Concepts
-==========================================================
+TRADING PEDRO 3.0 - grafico BTC/USDT con Smart Money Concepts y prediccion IA (Kronos)
+=======================================================================================
 
 Solo la primera vez:
   1. Instala Python desde https://www.python.org/downloads/
      (marca la casilla "Add python.exe to PATH" en el instalador).
   2. Abre "1_Instalar Trading Pedro.bat" y espera a que diga "Listo".
+
+Prediccion con IA (opcional, una sola vez):
+  3. Abre "4_Instalar IA Kronos.bat" y espera a que diga "Listo".
+     Descarga PyTorch y el modelo Kronos (unos 300 MB en total).
+  - En el panel derecho aparece la tarjeta "Prediccion IA - Kronos":
+      Predecir ............ dibuja en morado las proximas velas probables y
+                            el rango donde caen 8 de cada 10 escenarios.
+      Probar en el pasado . predice desde hace unas velas, sin verlas, y
+                            muestra si acerto la direccion y por cuanto fallo.
+  - Solo funciona abriendo "Trading Pedro.bat" (no en el archivo .html suelto).
+  - Kronos: https://github.com/shiyu-coder/Kronos (licencia MIT).
 
 Cada vez que quieras usarlo:
   - Abre "Trading Pedro.bat". Se abre solo el navegador en
@@ -20,4 +31,5 @@ Si ves una version vieja:
 Notas:
   - Solo necesita internet; usa los datos publicos de Binance (no pide claves ni cuenta).
   - Corre en tu propio equipo: nadie mas ve lo que haces.
+  - La prediccion de Kronos es una estimacion estadistica: puede fallar.
   - Es una herramienta de analisis, no un consejo de inversion.

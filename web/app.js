@@ -1088,6 +1088,7 @@
     setLegend(state.candles[state.candles.length - 1]);
     onPrice(state.lastPrice ?? state.candles[state.candles.length - 1].close);
     alertsOnData();
+    kronosOnData(false);
   }
 
   let loadSeq = 0;
@@ -1140,7 +1141,7 @@
     updateLast();
     onPrice(c.close);
     redraw();
-    if (k.x) refreshSmcSoon(); // vela cerrada: recalcular Smart Money
+    if (k.x) { refreshSmcSoon(); kronosOnData(true); } // vela cerrada: recalcular Smart Money y Kronos
   }
   function onTicker(d) {
     const p = parseFloat(d.P);
@@ -1815,6 +1816,7 @@
     rp.full = state.candles.map((c) => ({ ...c })); rp.liveSmc = state.smc;
     rp.ctxWasOn = ctxState.on; ctxWrap.hidden = true;
     $('#book-card').hidden = true;
+    $('#kronos-card').hidden = true; kDraw(); // la IA vería el "futuro" de la repetición
     $('#practice-card').hidden = false;
     rpBar.hidden = false;
     $('#replay-toggle').classList.add('on');
@@ -1924,6 +1926,7 @@
     rpBar.hidden = true;
     $('#practice-card').hidden = true;
     $('#book-card').hidden = false;
+    $('#kronos-card').hidden = false; kDraw();
     $('#replay-toggle').classList.remove('on');
     $('#hint').classList.remove('show');
     mainEl.classList.remove('drawing');
@@ -2107,6 +2110,187 @@
       if (cb.checked && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
     });
   });
+
+  // ---------- predicción IA (Kronos) ----------
+  // El servidor (kronos_ia.py) imagina varios escenarios de las próximas velas con el
+  // modelo Kronos. Se dibuja el camino medio como velas moradas tenues y el rango
+  // probable del cierre (8 de cada 10 escenarios) como dos líneas punteadas.
+  const KV = '#B48CFF';
+  const k = Object.assign({ horizon: 24, samples: 8, auto: false, show: true }, store.get('kronos', {}),
+    { res: null, busy: false, err: null, ready: null, bias: null, started: 0 });
+  const kCandles = chart.addCandlestickSeries({
+    upColor: 'rgba(46,204,143,0.22)', downColor: 'rgba(240,80,110,0.22)', borderUpColor: KV, borderDownColor: KV,
+    wickUpColor: 'rgba(180,140,255,0.7)', wickDownColor: 'rgba(180,140,255,0.7)',
+    priceLineVisible: false, lastValueVisible: false,
+  });
+  const kLine = chart.addLineSeries(line(KV, 2, { title: 'Kronos' }));
+  const kHi = chart.addLineSeries(line('rgba(180,140,255,0.6)', 1, { lineStyle: LWC.LineStyle.Dotted }));
+  const kLo = chart.addLineSeries(line('rgba(180,140,255,0.6)', 1, { lineStyle: LWC.LineStyle.Dotted }));
+  const kSave = () => store.set('kronos', { horizon: k.horizon, samples: k.samples, auto: k.auto, show: k.show, last: k.last });
+  if (![4, 8, 16].includes(k.samples)) k.samples = 8;
+
+  function kDraw() {
+    const r = k.res;
+    const on = k.show && r && !rp.on && r.interval === state.dataInterval;
+    if (!on) { [kCandles, kLine, kHi, kLo].forEach((s) => s.setData([])); return; }
+    const base = { time: r.base_time, value: r.base_close };
+    const pts = (vals) => [base, ...r.times.map((time, i) => ({ time, value: vals[i] }))];
+    if (r.offset) {
+      // prueba con el pasado: una línea, para ver las velas reales debajo
+      kCandles.setData([]);
+      kLine.setData(pts(r.close));
+    } else {
+      kCandles.setData(r.times.map((time, i) => ({ time, open: r.open[i], high: r.high[i], low: r.low[i], close: r.close[i] })));
+      kLine.setData([]);
+    }
+    kHi.setData(pts(r.q90)); kLo.setData(pts(r.q10));
+  }
+
+  const kBias = (p) => (p >= 0.6 ? 'up' : p <= 0.4 ? 'down' : 'flat');
+  const kPct = (a, b) => signed((a / b - 1) * 100, fmtPct) + ' %';
+
+  function kPanel() {
+    const out = $('#k-out'), r = k.res;
+    $('#k-run').disabled = $('#k-test').disabled = k.busy || !k.ready;
+    if (k.busy) {
+      const s = Math.round((Date.now() - k.started) / 1000);
+      // cada escenario es una pasada completa del modelo: el tiempo crece con ambos
+      const est = k.last ? Math.round(k.last.sec * (k.samples * k.horizon) / k.last.work) : null;
+      out.innerHTML = `<p class="k-busy">${k.loading ? 'Cargando el modelo (solo la primera vez)…' : 'Kronos está pensando…'} ${s} s${est ? ` de unos ${est} s` : ''}</p>`;
+      return;
+    }
+    if (k.err) { out.innerHTML = `<p class="k-err">${k.err}</p>`; return; }
+    if (!r || r.interval !== state.dataInterval) { out.innerHTML = k.note ? `<p class="sub">${k.note}</p>` : ''; return; }
+    const n = r.times.length, last = r.times[n - 1];
+    const foot = `<div class="k-foot muted">${r.model} · miró ${r.context} velas · ${r.samples} escenarios · ${String(r.elapsed).replace('.', ',')} s</div>`;
+    if (r.offset) {
+      // comparar con las velas reales que el modelo no vio
+      const real = new Map(state.candles.map((c) => [c.time, c.close]));
+      const idx = r.times.map((t, i) => (real.has(t) ? i : -1)).filter((i) => i >= 0);
+      if (!idx.length) { out.innerHTML = '<p class="k-err">Aún no hay velas reales para comparar.</p>'; return; }
+      const j = idx[idx.length - 1], rc = real.get(r.times[j]), pc = r.close[j];
+      const hit = Math.sign(pc - r.base_close) === Math.sign(rc - r.base_close);
+      const inside = idx.filter((i) => real.get(r.times[i]) >= r.q10[i] && real.get(r.times[i]) <= r.q90[i]).length;
+      out.innerHTML = `<p class="trend test">Prueba con el pasado</p>
+        <p class="sub">Predijo desde ${fmtShort(r.base_time)} sin ver las ${idx.length} velas siguientes.</p>
+        <dl>
+          <dt>Dirección</dt><dd>${hit ? '<span class="hit">✓ Acertó</span>' : '<span class="miss">✗ Falló</span>'}
+            <span class="zone">el precio ${rc >= r.base_close ? 'subió' : 'bajó'} ${kPct(rc, r.base_close)}</span></dd>
+          <dt>Cierre previsto</dt><dd class="mono">${fmtPrice(pc)}</dd>
+          <dt>Cierre real</dt><dd class="mono">${fmtPrice(rc)}</dd>
+          <dt>Error</dt><dd class="mono">${fmtPct(Math.abs(pc / rc - 1) * 100)} %</dd>
+          <dt>Dentro del rango</dt><dd class="mono">${Math.round(inside / idx.length * 100)} % de las velas</dd>
+        </dl>${foot}`;
+      return;
+    }
+    const b = kBias(r.p_up), pct = Math.round(r.p_up * 100);
+    const title = b === 'up' ? 'Sesgo alcista ▲' : b === 'down' ? 'Sesgo bajista ▼' : 'Sin sesgo claro';
+    const closedNow = state.candles.length > 1 ? state.candles[state.candles.length - 2].time : r.base_time;
+    const behind = Math.round((closedNow - r.base_time) / (r.times[1] - r.times[0] || 1));
+    out.innerHTML = `<p class="trend ${b}">${title}</p>
+      <p class="sub">${pct} % de los escenarios terminan más arriba dentro de ${n} velas de ${ivName(r.interval)}</p>
+      <dl>
+        <dt>Cierre esperado</dt><dd><span class="mono">${fmtPrice(r.end.mean)}</span><span class="zone">${kPct(r.end.mean, r.base_close)} · ${fmtShort(last)}</span></dd>
+        <dt>Rango probable</dt><dd><span class="mono">${fmtPrice(r.end.q10)} – ${fmtPrice(r.end.q90)}</span><span class="zone">8 de cada 10 escenarios</span></dd>
+        <dt>Máximo previsto</dt><dd class="mono">${fmtPrice(Math.max(...r.high))}</dd>
+        <dt>Mínimo previsto</dt><dd class="mono">${fmtPrice(Math.min(...r.low))}</dd>
+      </dl>
+      ${behind > 0 ? `<p class="sub">Hecha hace ${behind} vela${behind > 1 ? 's' : ''}; pulsa Predecir para actualizarla.</p>` : ''}
+      <button type="button" class="link" id="k-to-calc">Usar el cierre esperado como objetivo en la calculadora</button>
+      ${foot}`;
+  }
+
+  let kTick;
+  async function kRun(test) {
+    if (k.busy || rp.on || !k.ready) return;
+    k.busy = true; k.err = null; k.started = Date.now();
+    kPanel();
+    kTick = setInterval(kPanel, 1000);
+    try {
+      const st = await fetch('/api/kronos/status').then((r) => r.json()).catch(() => ({}));
+      k.loading = !st.loaded;
+      const iv = state.interval;
+      const r = await fetch(`/api/kronos?interval=${iv}&horizon=${k.horizon}&samples=${k.samples}&offset=${test ? k.horizon : 0}`);
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || r.statusText);
+      if (iv !== state.interval) return; // se cambió de temporalidad mientras pensaba
+      if (!j.offset) {
+        const b = kBias(j.p_up);
+        if (k.auto && k.bias && b !== k.bias && b !== 'flat') {
+          notify(`Kronos cambió a sesgo ${b === 'up' ? 'alcista ▲' : 'bajista ▼'} en ${ivName(iv)}: ${Math.round(j.p_up * 100)} % de escenarios al alza`);
+        }
+        k.bias = b;
+      }
+      k.res = j;
+      if (j.elapsed > 1) { k.last = { sec: j.elapsed, work: j.samples * j.horizon }; kSave(); }
+      kDraw();
+      if (k.show && !j.offset) {
+        // dejar a la vista el tramo previsto, a la derecha de la última vela
+        const n = state.candles.length;
+        chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 6 * j.horizon), to: n + j.horizon + 4 });
+      }
+    } catch (e) {
+      k.err = 'No se pudo predecir: ' + e.message;
+    } finally {
+      k.busy = false; k.loading = false;
+      clearInterval(kTick);
+      kPanel();
+    }
+  }
+
+  // Se llama con cada carga de datos y cada vela cerrada.
+  function kronosOnData(closed) {
+    if (k.res && k.res.interval !== state.dataInterval) { k.res = null; k.bias = null; k.err = null; }
+    kDraw();
+    if (!k.busy) kPanel();
+    if (closed && k.auto && !rp.on) setTimeout(() => kRun(false), 3000); // da tiempo al servidor a ver la vela nueva
+  }
+
+  async function kCheck() {
+    const st = $('#k-state');
+    if (window.TP_DATA) {
+      // versión de un solo archivo: no hay Python que ejecute el modelo
+      k.ready = false;
+      st.textContent = 'no disponible'; st.className = 'k-state';
+      k.note = 'La IA necesita el programa completo: abre «Trading Pedro.bat» en lugar del archivo .html.';
+      kPanel();
+      return;
+    }
+    try {
+      const s = await fetch('/api/kronos/status').then((r) => r.json());
+      k.ready = s.installed;
+      st.textContent = !s.installed ? 'sin instalar' : s.error ? 'error' : s.loaded ? '● lista' : s.loading ? 'cargando…' : 'instalada';
+      st.className = 'k-state' + (s.error ? ' err' : s.installed ? ' ok' : '');
+      k.note = s.installed ? null
+        : 'Para usarla, cierra Trading Pedro, abre «4_Instalar IA Kronos.bat» una vez y vuelve a abrir el programa.';
+      if (s.error && !k.busy) k.err = s.error;
+      if (s.loading || (!s.loaded && !s.error)) setTimeout(kCheck, 3000);
+    } catch {
+      k.ready = false; st.textContent = 'sin conexión'; st.className = 'k-state err';
+      k.note = 'No se pudo consultar la IA. Cierra Trading Pedro y vuelve a abrirlo.';
+    }
+    if (!k.busy) kPanel();
+  }
+
+  $('#k-horizon').value = k.horizon; $('#k-samples').value = k.samples;
+  $('#k-auto').checked = k.auto; $('#k-show').checked = k.show;
+  $('#k-horizon').addEventListener('change', (e) => { k.horizon = +e.target.value; kSave(); });
+  $('#k-samples').addEventListener('change', (e) => { k.samples = +e.target.value; kSave(); });
+  $('#k-auto').addEventListener('change', (e) => { k.auto = e.target.checked; kSave(); if (k.auto && !k.res) kRun(false); });
+  $('#k-show').addEventListener('change', (e) => { k.show = e.target.checked; kSave(); kDraw(); });
+  $('#k-run').addEventListener('click', () => kRun(false));
+  $('#k-test').addEventListener('click', () => kRun(true));
+  $('#k-out').addEventListener('click', (e) => {
+    if (!e.target.closest('#k-to-calc') || !k.res) return;
+    const c = state.calc, p = state.lastPrice ?? k.res.base_close;
+    c.entry = c.entry ?? p;
+    c.side = k.res.end.mean >= c.entry ? 'long' : 'short';
+    c.target = k.res.end.mean;
+    $('#calc-long').classList.toggle('on', c.side === 'long');
+    $('#calc-short').classList.toggle('on', c.side === 'short');
+    afterSuggest(`Objetivo según Kronos: cierre esperado de ${fmtPrice(c.target)} en ${k.res.times.length} velas.`);
+  });
+  kCheck();
 
   // ---------- controles ----------
   $$('#tfs button').forEach((b) => b.addEventListener('click', () => {

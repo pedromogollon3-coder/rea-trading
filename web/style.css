@@ -350,3 +350,23 @@ button.link:hover { color: var(--bear); }
   .side { width: auto; border-left: 0; overflow: visible; }
   .status { margin-left: 0; }
 }
+
+/* Predicción IA (Kronos) */
+.kronos .k-state { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.kronos .k-state.ok { color: #B48CFF; }
+.kronos .k-state.err { color: var(--bear); }
+.k-actions { display: flex; gap: 6px; margin-top: 10px; }
+.k-btn { flex: 1; border: 0; border-radius: 7px; padding: 7px 10px; background: #B48CFF; color: #150F22; font-weight: 600; font-size: 12px; }
+.k-btn.ghost { background: none; color: #B48CFF; border: 1px solid rgba(180, 140, 255, 0.5); }
+.k-btn:disabled { opacity: 0.45; cursor: default; }
+.k-out { margin-top: 6px; }
+.k-out:empty { display: none; }
+.k-out .trend.flat { color: var(--accent); }
+.k-out .trend.test { color: #B48CFF; font-size: 16px; }
+.k-out .hit { color: var(--bull); font-weight: 600; }
+.k-out .miss { color: var(--bear); font-weight: 600; }
+.k-out .k-foot { font-size: 11px; margin-top: 8px; }
+.k-out .k-err { color: var(--bear); font-size: 12px; margin: 0; }
+.k-out .k-busy { font-size: 12px; margin: 0; color: #B48CFF; }
+.k-out button.link { color: #B48CFF; padding-top: 6px; }
+.k-note { font-size: 11px; margin: 10px 0 0; }

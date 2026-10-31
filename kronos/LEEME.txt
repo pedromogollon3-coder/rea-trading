@@ -1,0 +1,5 @@
+Codigo del modelo Kronos, copiado sin cambios de
+https://github.com/shiyu-coder/Kronos (carpeta model/, commit 67b630e).
+Licencia MIT (ver LICENSE). Lo usa kronos_ia.py.
+Los pesos del modelo (NeoQuasar/Kronos-small) se descargan de Hugging Face
+la primera vez que se usa la IA.

@@ -151,6 +151,40 @@
         <div id="smc-summary" class="summary"><p class="muted">Calculando…</p></div>
       </section>
 
+      <section class="card kronos" id="kronos-card">
+        <div class="calc-head">
+          <h2>Predicción IA · Kronos</h2>
+          <span class="k-state" id="k-state"></span>
+        </div>
+        <div class="calc-grid">
+          <label for="k-horizon">Velas a predecir</label>
+          <div class="field">
+            <select id="k-horizon">
+              <option value="12">12</option>
+              <option value="24">24</option>
+              <option value="48">48</option>
+              <option value="96">96</option>
+            </select>
+          </div>
+          <label for="k-samples">Escenarios</label>
+          <div class="field">
+            <select id="k-samples" title="Cuántos futuros posibles imagina el modelo. Más escenarios: más fiable, pero tarda más">
+              <option value="4">4 (rápido)</option>
+              <option value="8">8</option>
+              <option value="16">16 (más fiable)</option>
+            </select>
+          </div>
+        </div>
+        <div class="k-actions">
+          <button type="button" id="k-run" class="k-btn" title="Predecir las próximas velas de la temporalidad del gráfico">Predecir</button>
+          <button type="button" id="k-test" class="k-btn ghost" title="Predecir desde hace unas velas, sin que el modelo las vea, y comparar con lo que pasó">Probar en el pasado</button>
+        </div>
+        <label class="calc-check"><input type="checkbox" id="k-auto"> Volver a predecir al cerrar cada vela</label>
+        <label class="calc-check"><input type="checkbox" id="k-show"> Mostrar en el gráfico</label>
+        <div id="k-out" class="summary k-out"></div>
+        <p class="muted k-note">Kronos es un modelo de IA entrenado con velas de más de 45 mercados. Imagina varios futuros posibles; el sesgo es la parte de ellos que termina más arriba. Es una estimación, no una certeza.</p>
+      </section>
+
       <section class="card calc" id="calc-card">
         <div class="calc-head">
           <h2>Calculadora de riesgo</h2>

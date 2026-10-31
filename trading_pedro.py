@@ -1,4 +1,4 @@
-"""Trading Pedro: gráfico BTC/USDT en vivo con Smart Money Concepts.
+"""Trading Pedro: gráfico BTC/USDT en vivo con Smart Money Concepts y predicción IA (Kronos).
 
 Uso:
     python trading_pedro.py              # abre http://127.0.0.1:8050 en el navegador
@@ -27,10 +27,12 @@ import numpy as np
 import pandas as pd
 from smartmoneyconcepts import smc
 
+import kronos_ia
+
 HOST, PORT = "127.0.0.1", 8050
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 SYMBOL = "BTCUSDT"
-VERSION = "2.7 (18 oct 2026)"  # se muestra en la app; súbela en cada entrega
+VERSION = "3.0 (31 oct 2026)"  # se muestra en la app; súbela en cada entrega
 INTERVALS = {"1m", "5m", "15m", "1h", "4h", "1d"}
 # data-api.binance.vision es el servidor de datos públicos de Binance; api.binance.com
 # queda como respaldo (desde algunas ubicaciones responde 451).
@@ -262,7 +264,26 @@ class Handler(SimpleHTTPRequestHandler):
             return self.api_data(urllib.parse.parse_qs(url.query))
         if url.path == "/api/version":
             return self._json(200, {"version": VERSION})
+        if url.path == "/api/kronos/status":
+            return self._json(200, kronos_ia.status())
+        if url.path == "/api/kronos":
+            return self.api_kronos(urllib.parse.parse_qs(url.query))
         return super().do_GET()
+
+    def api_kronos(self, q):
+        try:
+            interval = q.get("interval", ["1h"])[0]
+            if interval not in INTERVALS:
+                raise ValueError(f"Temporalidad no válida: {interval}")
+            horizon = max(1, min(120, int(q.get("horizon", ["24"])[0])))
+            samples = max(1, min(64, int(q.get("samples", ["16"])[0])))
+            offset = max(0, min(1000, int(q.get("offset", ["0"])[0])))
+            df = get_candles(interval, MAX_CANDLES, max_age=120)
+            # solo velas cerradas: la vela en curso es la primera que se predice
+            self._json(200, kronos_ia.forecast(df.iloc[:-1], interval, INTERVAL_SEC[interval],
+                                               horizon, samples, offset))
+        except Exception as e:  # noqa: BLE001
+            self._json(500, {"error": str(e)})
 
     def api_data(self, q):
         try:
@@ -311,6 +332,17 @@ def running_version(url: str):
         return None
 
 
+def preload_kronos():
+    """Si la IA está instalada, el modelo se carga por detrás para que la primera predicción sea rápida."""
+    if not kronos_ia.installed():
+        return
+    try:
+        kronos_ia.load()
+        print("IA Kronos lista.")
+    except Exception as e:  # noqa: BLE001
+        print(f"[Kronos] {e}")
+
+
 def main():
     port = int(sys.argv[sys.argv.index("--port") + 1]) if "--port" in sys.argv else PORT
     url = f"http://{HOST}:{port}"
@@ -334,6 +366,7 @@ def main():
         return
     print(f"Trading Pedro funcionando en {url}  (Ctrl+C para salir)")
     threading.Thread(target=keep_warm, daemon=True).start()
+    threading.Thread(target=preload_kronos, daemon=True).start()
     if "--no-browser" not in sys.argv:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
     try:
