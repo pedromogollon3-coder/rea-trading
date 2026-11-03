@@ -153,6 +153,21 @@
         <div id="smc-summary" class="summary"><p class="muted">Calculando…</p></div>
       </section>
 
+      <section class="card strat" id="strat-card">
+        <div class="calc-head">
+          <h2>Estrategias</h2>
+          <span class="k-state" id="st-state"></span>
+        </div>
+        <div class="field">
+          <select id="st-pick" title="Aplica las reglas de una estrategia a 1H, 4H y Diario">
+            <option value="">Ninguna</option>
+            <option value="tradingLatino">TradingLatino (Jaime Merino)</option>
+          </select>
+        </div>
+        <div id="st-out" class="st-out"></div>
+        <p class="muted k-note" id="st-note" hidden>Aplicación automática de las reglas de la estrategia sobre 1H, 4H y Diario, con la última vela aún abierta: la lectura puede cambiar antes de que cierre. No es una recomendación de inversión.</p>
+      </section>
+
       <section class="card kronos" id="kronos-card">
         <div class="calc-head">
           <h2>Predicción IA · Kronos</h2>
@@ -282,8 +297,10 @@
       <section class="card">
         <h2>Indicadores</h2>
         <div class="checks two">
+          <label><input type="checkbox" data-show="ema10"> <i class="sw" style="background:#4FC3F7"></i>EMA 10</label>
           <label><input type="checkbox" data-show="ema20"> <i class="sw" style="background:#F5B841"></i>EMA 20</label>
           <label><input type="checkbox" data-show="ema50"> <i class="sw" style="background:#5AA9FF"></i>EMA 50</label>
+          <label><input type="checkbox" data-show="ema55"> <i class="sw" style="background:#C8963E"></i>EMA 55</label>
           <label><input type="checkbox" data-show="sma200"> <i class="sw" style="background:#B48CFF"></i>SMA 200</label>
           <label><input type="checkbox" data-show="ema600"> <i class="sw" style="background:#FF7A45"></i>EMA 600</label>
           <label><input type="checkbox" data-show="bb"> <i class="sw" style="background:#8D97AB"></i>Bollinger</label>
@@ -292,6 +309,7 @@
           <label><input type="checkbox" data-show="macd"> MACD</label>
           <label><input type="checkbox" data-show="sqz"> Squeeze Mom.</label>
           <label><input type="checkbox" data-show="adx"> ADX</label>
+          <label><input type="checkbox" data-show="vpvr"> Perfil volumen</label>
         </div>
       </section>
 
@@ -346,6 +364,7 @@
   <script src="binance.js"></script>
   <script src="smc.js"></script>
   <script src="calc.js"></script>
+  <script src="tradinglatino.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

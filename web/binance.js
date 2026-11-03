@@ -4,24 +4,34 @@
  * responde 429; si se sigue preguntando, bloquea la IP un tiempo y responde 418, y cada
  * consulta durante el bloqueo lo alarga. Por eso, ante 429 o 418 se deja de consultar
  * hasta la hora que indica Binance (o una pausa prudente si no la indica).
+ *
+ * Ojo: la respuesta de bloqueo (418/429) llega sin la cabecera CORS, así que el navegador
+ * la esconde y fetch falla como si no hubiera conexión. Por eso, si fallan todos los
+ * servidores, también se pausa, con esperas que se duplican (30 s, 1, 2, 4… hasta 10 min).
  */
 (function () {
   'use strict';
   const HOSTS = ['https://data-api.binance.vision', 'https://api.binance.com'];
   let pausedUntil = 0;
+  let netFails = 0; // fallos seguidos de todos los servidores
   const listeners = [];
 
+  const hhmm = (t) => new Date(t).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
   class BinancePaused extends Error {
-    constructor(until) {
-      super('Binance limitó las consultas; se reanudan a las ' + new Date(until).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }));
+    constructor(until, why) {
+      super(why === 'net'
+        ? 'Binance no responde (sin conexión o bloqueo por exceso de consultas); se reintenta a las ' + hhmm(until)
+        : 'Binance limitó las consultas; se reanudan a las ' + hhmm(until));
       this.until = until;
+      this.why = why;
     }
   }
 
-  function pause(until) {
+  let pauseWhy = 'limit';
+  function pause(until, why = 'limit') {
     if (until <= pausedUntil) return;
-    pausedUntil = until;
-    listeners.forEach((fn) => { try { fn(until); } catch { /* sin efecto */ } });
+    pausedUntil = until; pauseWhy = why;
+    listeners.forEach((fn) => { try { fn(until, why); } catch { /* sin efecto */ } });
   }
 
   // Hora de fin del bloqueo: del mensaje de Binance ("IP banned until 1700000000000"),
@@ -41,8 +51,8 @@
 
   /** GET a un endpoint público, p. ej. '/api/v3/klines?symbol=BTCUSDT&interval=1m'. */
   async function getJson(path) {
-    if (Date.now() < pausedUntil) throw new BinancePaused(pausedUntil);
-    let lastErr;
+    if (Date.now() < pausedUntil) throw new BinancePaused(pausedUntil, pauseWhy);
+    let lastErr, allNet = true;
     for (const host of HOSTS) {
       try {
         const r = await fetch(host + path);
@@ -50,12 +60,20 @@
           pause(await banUntil(r));
           throw new BinancePaused(pausedUntil);
         }
-        if (!r.ok) throw new Error(`Binance respondió ${r.status}`);
-        return await r.json();
+        if (!r.ok) { allNet = false; throw new Error(`Binance respondió ${r.status}`); }
+        const j = await r.json();
+        netFails = 0;
+        return j;
       } catch (e) {
         if (e instanceof BinancePaused) throw e; // no insistir con otro servidor
+        if (!(e instanceof TypeError)) allNet = false;
         lastErr = e;
       }
+    }
+    if (allNet) {
+      netFails++;
+      pause(Date.now() + Math.min(600, 30 * 2 ** (netFails - 1)) * 1000, 'net');
+      throw new BinancePaused(pausedUntil, 'net');
     }
     throw new Error(lastErr ? lastErr.message : 'sin conexión con Binance');
   }

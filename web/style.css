@@ -373,3 +373,39 @@ button.link:hover { color: var(--bear); }
 .k-out .k-busy { font-size: 12px; margin: 0; color: #B48CFF; }
 .k-out button.link { color: #B48CFF; padding-top: 6px; }
 .k-note { font-size: 11px; margin: 10px 0 0; }
+
+/* estrategias */
+.strat .k-state.ok { color: var(--accent); }
+.strat .k-state.err { color: var(--bear); }
+.st-out:empty { display: none; }
+.st-out { margin-top: 10px; font-size: 12px; }
+.st-out .k-err { color: var(--bear); margin: 0; }
+.st-tf { border-top: 1px solid var(--line); padding: 8px 0; }
+.st-tf:first-child { border-top: 0; padding-top: 0; }
+.st-tf-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 11px; }
+.st-tf-head b { font-size: 12px; color: var(--text); }
+.st-proj { margin: 2px 0 6px; font-weight: 700; font-size: 14px; color: var(--accent); }
+.st-tf.main .st-proj { font-size: 17px; }
+.st-proj.up { color: var(--bull); }
+.st-proj.down { color: var(--bear); }
+.st-out dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; }
+.st-out dt { color: var(--muted); }
+.st-out dd { margin: 0; }
+.st-out dd .sw { margin-right: 6px; vertical-align: 0; }
+.st-out .zone { display: block; font-size: 11px; color: var(--muted); }
+.st-notes, .st-checks { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.st-notes li { padding: 5px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.04); border-left: 3px solid var(--muted); }
+.st-notes li.up { border-left-color: var(--bull); }
+.st-notes li.down { border-left-color: var(--bear); }
+.st-notes li.warn { border-left-color: var(--accent); background: rgba(245, 184, 65, 0.08); }
+.st-checks li.ok { color: var(--text); }
+.st-checks li.ok::first-letter { color: var(--bull); }
+.st-checks li.no { color: var(--muted); }
+.st-plan { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+.st-plan h3 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); font-weight: 600; }
+.st-plan .st-none { margin: 0 0 2px; font-weight: 700; font-size: 14px; color: var(--text); }
+.st-plan p.muted { margin: 0; }
+.st-btn { width: 100%; margin-top: 10px; background: var(--accent); color: #17120A; }
+.st-more { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 6px; }
+.st-more summary { cursor: pointer; color: var(--muted); font-size: 11px; }
+.st-more .st-tf { border-top: 0; }

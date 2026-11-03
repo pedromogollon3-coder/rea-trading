@@ -1,5 +1,5 @@
-TRADING PEDRO 3.0 - grafico BTC/USDT con Smart Money Concepts y prediccion IA (Kronos)
-=======================================================================================
+TRADING PEDRO 3.2 - grafico BTC/USDT con Smart Money Concepts, estrategias y prediccion IA (Kronos)
+====================================================================================================
 
 Solo la primera vez:
   1. Instala Python desde https://www.python.org/downloads/
@@ -16,6 +16,17 @@ Prediccion con IA (opcional, una sola vez):
                             muestra si acerto la direccion y por cuanto fallo.
   - Solo funciona abriendo "Trading Pedro.bat" (no en el archivo .html suelto).
   - Kronos: https://github.com/shiyu-coder/Kronos (licencia MIT).
+
+Estrategias (tarjeta "Estrategias" en el panel derecho):
+  - Elige "TradingLatino (Jaime Merino)". Se encienden solos la EMA 10, la
+    EMA 55, el Squeeze Momentum (el "monitor"), el ADX (nivel 23) y el Perfil
+    de volumen con su POC.
+  - La tarjeta lee 4H y Diario (y 1H para afinar la entrada) y muestra la
+    proyeccion, los avisos (divergencias, "le paso el tiempo", contra
+    tendencia) y el plan: entrada, stop y objetivo.
+  - "Llevar a la calculadora" pasa ese plan a la Calculadora de riesgo.
+  - Es la aplicacion automatica de las reglas, no la opinion de Jaime ni un
+    consejo de inversion. La ultima vela aun no cierra: la lectura puede cambiar.
 
 Cada vez que quieras usarlo:
   - Abre "Trading Pedro.bat". Se abre solo el navegador en

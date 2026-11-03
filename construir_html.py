@@ -55,7 +55,7 @@ def main():
     app_tag = '<script src="app.js"></script>'
     assert lwc_tag in html and app_tag in html, "index.html cambió: revisa las etiquetas <script>"
     html = html.replace(lwc_tag, script(charts_lib()))
-    for name in ("binance.js", "smc.js", "calc.js"):
+    for name in ("binance.js", "smc.js", "calc.js", "tradinglatino.js"):
         tag = f'<script src="{name}"></script>'
         assert tag in html, f"index.html cambió: falta {name}"
         html = html.replace(tag, script(read(name)))

@@ -385,6 +385,42 @@ button.link:hover { color: var(--bear); }
 .k-out button.link { color: #B48CFF; padding-top: 6px; }
 .k-note { font-size: 11px; margin: 10px 0 0; }
 
+/* estrategias */
+.strat .k-state.ok { color: var(--accent); }
+.strat .k-state.err { color: var(--bear); }
+.st-out:empty { display: none; }
+.st-out { margin-top: 10px; font-size: 12px; }
+.st-out .k-err { color: var(--bear); margin: 0; }
+.st-tf { border-top: 1px solid var(--line); padding: 8px 0; }
+.st-tf:first-child { border-top: 0; padding-top: 0; }
+.st-tf-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 11px; }
+.st-tf-head b { font-size: 12px; color: var(--text); }
+.st-proj { margin: 2px 0 6px; font-weight: 700; font-size: 14px; color: var(--accent); }
+.st-tf.main .st-proj { font-size: 17px; }
+.st-proj.up { color: var(--bull); }
+.st-proj.down { color: var(--bear); }
+.st-out dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 5px 10px; }
+.st-out dt { color: var(--muted); }
+.st-out dd { margin: 0; }
+.st-out dd .sw { margin-right: 6px; vertical-align: 0; }
+.st-out .zone { display: block; font-size: 11px; color: var(--muted); }
+.st-notes, .st-checks { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.st-notes li { padding: 5px 8px; border-radius: 6px; background: rgba(255, 255, 255, 0.04); border-left: 3px solid var(--muted); }
+.st-notes li.up { border-left-color: var(--bull); }
+.st-notes li.down { border-left-color: var(--bear); }
+.st-notes li.warn { border-left-color: var(--accent); background: rgba(245, 184, 65, 0.08); }
+.st-checks li.ok { color: var(--text); }
+.st-checks li.ok::first-letter { color: var(--bull); }
+.st-checks li.no { color: var(--muted); }
+.st-plan { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+.st-plan h3 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); font-weight: 600; }
+.st-plan .st-none { margin: 0 0 2px; font-weight: 700; font-size: 14px; color: var(--text); }
+.st-plan p.muted { margin: 0; }
+.st-btn { width: 100%; margin-top: 10px; background: var(--accent); color: #17120A; }
+.st-more { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 6px; }
+.st-more summary { cursor: pointer; color: var(--muted); font-size: 11px; }
+.st-more .st-tf { border-top: 0; }
+
 </style>
 </head>
 <body>
@@ -530,6 +566,21 @@ button.link:hover { color: var(--bear); }
         <div id="smc-summary" class="summary"><p class="muted">Calculando…</p></div>
       </section>
 
+      <section class="card strat" id="strat-card">
+        <div class="calc-head">
+          <h2>Estrategias</h2>
+          <span class="k-state" id="st-state"></span>
+        </div>
+        <div class="field">
+          <select id="st-pick" title="Aplica las reglas de una estrategia a 1H, 4H y Diario">
+            <option value="">Ninguna</option>
+            <option value="tradingLatino">TradingLatino (Jaime Merino)</option>
+          </select>
+        </div>
+        <div id="st-out" class="st-out"></div>
+        <p class="muted k-note" id="st-note" hidden>Aplicación automática de las reglas de la estrategia sobre 1H, 4H y Diario, con la última vela aún abierta: la lectura puede cambiar antes de que cierre. No es una recomendación de inversión.</p>
+      </section>
+
       <section class="card kronos" id="kronos-card">
         <div class="calc-head">
           <h2>Predicción IA · Kronos</h2>
@@ -659,8 +710,10 @@ button.link:hover { color: var(--bear); }
       <section class="card">
         <h2>Indicadores</h2>
         <div class="checks two">
+          <label><input type="checkbox" data-show="ema10"> <i class="sw" style="background:#4FC3F7"></i>EMA 10</label>
           <label><input type="checkbox" data-show="ema20"> <i class="sw" style="background:#F5B841"></i>EMA 20</label>
           <label><input type="checkbox" data-show="ema50"> <i class="sw" style="background:#5AA9FF"></i>EMA 50</label>
+          <label><input type="checkbox" data-show="ema55"> <i class="sw" style="background:#C8963E"></i>EMA 55</label>
           <label><input type="checkbox" data-show="sma200"> <i class="sw" style="background:#B48CFF"></i>SMA 200</label>
           <label><input type="checkbox" data-show="ema600"> <i class="sw" style="background:#FF7A45"></i>EMA 600</label>
           <label><input type="checkbox" data-show="bb"> <i class="sw" style="background:#8D97AB"></i>Bollinger</label>
@@ -669,6 +722,7 @@ button.link:hover { color: var(--bear); }
           <label><input type="checkbox" data-show="macd"> MACD</label>
           <label><input type="checkbox" data-show="sqz"> Squeeze Mom.</label>
           <label><input type="checkbox" data-show="adx"> ADX</label>
+          <label><input type="checkbox" data-show="vpvr"> Perfil volumen</label>
         </div>
       </section>
 
@@ -736,24 +790,34 @@ button.link:hover { color: var(--bear); }
  * responde 429; si se sigue preguntando, bloquea la IP un tiempo y responde 418, y cada
  * consulta durante el bloqueo lo alarga. Por eso, ante 429 o 418 se deja de consultar
  * hasta la hora que indica Binance (o una pausa prudente si no la indica).
+ *
+ * Ojo: la respuesta de bloqueo (418/429) llega sin la cabecera CORS, así que el navegador
+ * la esconde y fetch falla como si no hubiera conexión. Por eso, si fallan todos los
+ * servidores, también se pausa, con esperas que se duplican (30 s, 1, 2, 4… hasta 10 min).
  */
 (function () {
   'use strict';
   const HOSTS = ['https://data-api.binance.vision', 'https://api.binance.com'];
   let pausedUntil = 0;
+  let netFails = 0; // fallos seguidos de todos los servidores
   const listeners = [];
 
+  const hhmm = (t) => new Date(t).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
   class BinancePaused extends Error {
-    constructor(until) {
-      super('Binance limitó las consultas; se reanudan a las ' + new Date(until).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' }));
+    constructor(until, why) {
+      super(why === 'net'
+        ? 'Binance no responde (sin conexión o bloqueo por exceso de consultas); se reintenta a las ' + hhmm(until)
+        : 'Binance limitó las consultas; se reanudan a las ' + hhmm(until));
       this.until = until;
+      this.why = why;
     }
   }
 
-  function pause(until) {
+  let pauseWhy = 'limit';
+  function pause(until, why = 'limit') {
     if (until <= pausedUntil) return;
-    pausedUntil = until;
-    listeners.forEach((fn) => { try { fn(until); } catch { /* sin efecto */ } });
+    pausedUntil = until; pauseWhy = why;
+    listeners.forEach((fn) => { try { fn(until, why); } catch { /* sin efecto */ } });
   }
 
   // Hora de fin del bloqueo: del mensaje de Binance ("IP banned until 1700000000000"),
@@ -773,8 +837,8 @@ button.link:hover { color: var(--bear); }
 
   /** GET a un endpoint público, p. ej. '/api/v3/klines?symbol=BTCUSDT&interval=1m'. */
   async function getJson(path) {
-    if (Date.now() < pausedUntil) throw new BinancePaused(pausedUntil);
-    let lastErr;
+    if (Date.now() < pausedUntil) throw new BinancePaused(pausedUntil, pauseWhy);
+    let lastErr, allNet = true;
     for (const host of HOSTS) {
       try {
         const r = await fetch(host + path);
@@ -782,12 +846,20 @@ button.link:hover { color: var(--bear); }
           pause(await banUntil(r));
           throw new BinancePaused(pausedUntil);
         }
-        if (!r.ok) throw new Error(`Binance respondió ${r.status}`);
-        return await r.json();
+        if (!r.ok) { allNet = false; throw new Error(`Binance respondió ${r.status}`); }
+        const j = await r.json();
+        netFails = 0;
+        return j;
       } catch (e) {
         if (e instanceof BinancePaused) throw e; // no insistir con otro servidor
+        if (!(e instanceof TypeError)) allNet = false;
         lastErr = e;
       }
+    }
+    if (allNet) {
+      netFails++;
+      pause(Date.now() + Math.min(600, 30 * 2 ** (netFails - 1)) * 1000, 'net');
+      throw new BinancePaused(pausedUntil, 'net');
     }
     throw new Error(lastErr ? lastErr.message : 'sin conexión con Binance');
   }
@@ -1136,7 +1208,283 @@ button.link:hover { color: var(--bear); }
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
-  <script>window.TP_VERSION = "3.1 (3 nov 2026)";</script>
+  <script>
+/* Estrategia TradingLatino (Jaime Merino) para Trading Pedro.
+ *
+ * Lee EMA 10 y 55, Squeeze Momentum (el "monitor"), ADX con nivel 23 y perfil de volumen
+ * en 1H, 4H y Diario, y aplica las reglas: matriz monitor + ADX, entradas en largo y en
+ * corto, "le pasó el tiempo", divergencias y las advertencias de la estrategia.
+ *
+ * Las reglas están escritas con palabras; aquí se traducen a números con estos valores:
+ *   cerca de la EMA 55 o de un nodo .... a menos de NEAR_ATR rangos medios de vela (ATR 14)
+ *   cerca del punto 0 .................. el valle bajó a menos del ZERO_FRAC de su máximo
+ *   valle desarrollado ................. al menos DEVELOPED velas
+ *   precio lejos de las medias ......... a más de FAR_ATR ATR de la EMA 55
+ * Es una aplicación mecánica de las reglas, no un consejo de inversión.
+ */
+(function () {
+  'use strict';
+  const NEAR_ATR = 0.5, ZERO_FRAC = 0.3, DEVELOPED = 6, FAR_ATR = 2, ADX_LEVEL = 23;
+  const VP_CANDLES = 150; // velas para el perfil de volumen (lo que se ve en el gráfico)
+
+  const HORIZON = {
+    '1h': 'próximas 12–24 h · solo para afinar la entrada',
+    '4h': 'próximas 24–48 h',
+    '1d': 'próximos 10–15 días',
+  };
+  const MON_TXT = {
+    vc: 'verde claro: impulso alcista',
+    vo: 'verde oscuro: el impulso alcista se debilita',
+    ro: 'rojo oscuro: impulso bajista',
+    rc: 'rojo claro: la caída se frena',
+  };
+
+  // Tramos seguidos del monitor con el mismo signo (valles verdes > 0 y rojos < 0).
+  function valleys(val, cs) {
+    const out = [];
+    let cur = null;
+    for (let i = 0; i < val.length; i++) {
+      const v = val[i];
+      if (v == null) continue;
+      const sign = v >= 0 ? 1 : -1;
+      if (!cur || cur.sign !== sign) {
+        cur = { sign, start: i, end: i, peak: 0, hi: -Infinity, lo: Infinity, closeBefore: cs[Math.max(0, i - 1)].close };
+        out.push(cur);
+      }
+      cur.end = i;
+      cur.peak = Math.max(cur.peak, Math.abs(v));
+      cur.hi = Math.max(cur.hi, cs[i].high);
+      cur.lo = Math.min(cur.lo, cs[i].low);
+    }
+    out.forEach((w) => { w.len = w.end - w.start + 1; w.closeEnd = cs[w.end].close; });
+    return out;
+  }
+
+  // Cruce de EMA 10 y 55 en las últimas velas, con retroceso a apoyar en la EMA 55 y continuación.
+  function breakAndRetest(cs, e10, e55, a, n) {
+    for (let i = n; i > Math.max(1, n - 30); i--) {
+      if (e10[i] == null || e55[i] == null || e10[i - 1] == null || e55[i - 1] == null) return null;
+      const up = e10[i] > e55[i] && e10[i - 1] <= e55[i - 1];
+      const down = e10[i] < e55[i] && e10[i - 1] >= e55[i - 1];
+      if (!up && !down) continue;
+      const dir = up ? 1 : -1;
+      let touched = false;
+      for (let j = i + 1; j <= n; j++) {
+        const dist = dir === 1 ? cs[j].low - e55[j] : e55[j] - cs[j].high;
+        if (dist <= 0.3 * a) touched = true;
+      }
+      const holds = dir === 1 ? cs[n].close > e55[n] : cs[n].close < e55[n];
+      return { dir, ago: n - i, confirmed: touched && holds };
+    }
+    return null;
+  }
+
+  function readTf(tf, cs, ind) {
+    const n = cs.length - 1;
+    if (n < 120) return null;
+    const close = cs.map((c) => c.close);
+    const e10 = ind.ema(close, 10), e55 = ind.ema(close, 55);
+    const sq = ind.squeeze(cs), ad = ind.adx(cs), atr = ind.atr(cs);
+    const a = atr[n], price = close[n], v = sq.val[n], vPrev = sq.val[n - 1];
+    const vp = ind.vpvr(cs.slice(-VP_CANDLES), 48);
+    if (v == null || ad.adx[n] == null || e55[n] == null || !a || !vp) return null;
+
+    // EMAs y estructura
+    const trend = e10[n] > e55[n] ? 'up' : 'down';
+    const above = price > e55[n];
+    const rr = breakAndRetest(cs, e10, e55, a, n);
+    const emaTxt = trend === 'up'
+      ? `Alcista: EMA 10 sobre EMA 55 · precio ${above ? 'sobre' : 'bajo'} la EMA 55`
+      : `Bajista: EMA 10 bajo EMA 55 · precio ${above ? 'sobre' : 'bajo'} la EMA 55`;
+
+    // Monitor
+    const mon = ind.monColor(v, vPrev);
+    const vs = valleys(sq.val, cs), cur = vs[vs.length - 1], prev = vs[vs.length - 2];
+    const nearZero = Math.abs(v) <= ZERO_FRAC * cur.peak;
+    const young = cur.len <= 3; // valle recién nacido
+    const monTxt = `${MON_TXT[mon]} · valle ${cur.sign > 0 ? 'verde' : 'rojo'} de ${cur.len} vela${cur.len === 1 ? '' : 's'}`
+      + (nearZero && cur.len > 2 ? ', cerca del punto 0' : '');
+
+    // ADX
+    const adxV = ad.adx[n], adxUp = adxV > ad.adx[n - 1], strong = adxV >= ADX_LEVEL;
+    const adxTxt = `${adxV.toFixed(1).replace('.', ',')} · ${strong ? 'sobre' : 'bajo'} 23 · pendiente ${adxUp ? 'positiva' : 'negativa'}`
+      + ` → ${strong && adxUp ? 'con fuerza' : !adxUp ? 'pierde fuerza' : 'sin fuerza'}`;
+
+    // Volumen
+    const pocPos = vp.poc > price ? 'resistencia (encima del precio)' : 'soporte (debajo del precio)';
+    const nodesAbove = vp.nodes.filter((p) => p > price + 0.3 * a).sort((x, y) => x - y);
+    const nodesBelow = vp.nodes.filter((p) => p < price - 0.3 * a).sort((x, y) => y - x);
+    const volTxt = `POC ${ind.fmt(vp.poc)} · ${pocPos}`;
+
+    // Matriz monitor + ADX (sección 3 de la estrategia)
+    const dirUp = mon === 'vc' || mon === 'rc';
+    let matrix;
+    if (dirUp && adxUp && strong) {
+      matrix = { dir: 'up', text: 'Movimiento alcista con fuerza', note: 'Si ya subió, no se entra en la punta: se protege con stop en la entrada o se toma ganancia.' };
+    } else if (mon === 'rc' && !adxUp) {
+      matrix = { dir: 'range-up', text: 'La caída perdió fuerza: rango o subida', note: 'Zona óptima de compra si apoya en soporte o en un nodo de volumen.' };
+    } else if (mon === 'vo' && !adxUp) {
+      matrix = { dir: 'range-down', text: 'El impulso alcista perdió fuerza: rango o caída', note: 'Momento de cerrar largos o tomar ganancias.' };
+    } else if (mon === 'ro' && adxUp && strong) {
+      matrix = { dir: 'down', text: 'Caída con fuerza ("cuchillo cayendo")', note: 'Prohibido comprar hasta que el monitor gire a rojo claro y el ADX pierda pendiente.' };
+    } else if (mon === 'vo' && adxUp && strong) {
+      matrix = { dir: 'down', text: 'El giro bajista toma fuerza: caída', note: '' };
+    } else if (mon === 'vc' && !adxUp) {
+      matrix = { dir: 'range-up', text: 'Impulso alcista sin fuerza (ADX bajando): rango o subida', note: '' };
+    } else if (mon === 'ro' && !adxUp) {
+      matrix = { dir: 'range-down', text: 'Caída sin fuerza (ADX bajando): rango o caída', note: '' };
+    } else {
+      matrix = { dir: 'range', text: `Impulso ${dirUp ? 'alcista' : 'bajista'} todavía sin fuerza (ADX bajo 23): rango`, note: '' };
+    }
+
+    // Proyección: la matriz dentro de la tendencia de las medias
+    let projection = matrix.text, projDir = matrix.dir, matrixNote = matrix.note;
+    if (trend === 'up' && above && (matrix.dir === 'range-down' || matrix.dir === 'down')) {
+      projection = 'Retroceso a la EMA 55 para seguir subiendo'; projDir = 'range-down';
+      matrixNote = `${matrix.text}, pero la tendencia es alcista: el retroceso hacia la EMA 55 (${ind.fmt(e55[n])}) es zona de compra, no de venta.`;
+    } else if (trend === 'down' && !above && (matrix.dir === 'range-up' || matrix.dir === 'up')) {
+      projection = 'Rebote a la EMA 55 para seguir cayendo'; projDir = 'range-up';
+      matrixNote = `${matrix.text}, pero la tendencia es bajista: el rebote hacia la EMA 55 (${ind.fmt(e55[n])}) es zona de venta; comprar aquí sería contra tendencia.`;
+    }
+
+    const notes = [];
+    if (matrixNote) notes.push({ kind: 'info', text: matrixNote });
+    if (rr && rr.confirmed) {
+      notes.push({ kind: rr.dir > 0 ? 'up' : 'down', text: `Rompe y apoya ${rr.dir > 0 ? 'alcista' : 'bajista'}: las medias se cruzaron hace ${rr.ago} velas y el precio apoyó en la EMA 55.` });
+    }
+
+    // Regla del tiempo: un valle completo hasta el punto 0 sin que el precio se moviera a su favor
+    const done = young && prev ? prev : (nearZero && cur.len >= DEVELOPED ? cur : null);
+    if (done && done.len >= DEVELOPED) {
+      const moved = (done.closeEnd - done.closeBefore) / a;
+      if (done.sign < 0 && moved > -NEAR_ATR && close[done.end] > e55[done.end]) {
+        notes.push({ kind: 'up', text: 'A los bajistas "les pasó el tiempo": hubo un valle rojo completo y el precio no cayó. Lo más probable es subir al pasar a valle verde.' });
+      } else if (done.sign > 0 && moved < NEAR_ATR && close[done.end] < e55[done.end]) {
+        notes.push({ kind: 'down', text: 'A los alcistas "les pasó el tiempo": hubo un valle verde completo y el precio no subió. Lo más probable es caer en el próximo valle rojo.' });
+      }
+    }
+
+    // Divergencias: comparar el valle actual (o el recién terminado) con el anterior del mismo color
+    const lastOf = (sign) => vs.filter((w) => w.sign === sign && w.len >= 3).slice(-2);
+    const [gA, gB] = lastOf(1), [rA, rB] = lastOf(-1);
+    if (gA && gB && n - gB.end <= 5 && gB.hi > gA.hi && gB.peak < gA.peak) {
+      notes.push({ kind: 'down', text: `Divergencia bajista: el precio hizo un máximo más alto pero el valle verde es más pequeño. Proyecta caída hacia la EMA 55 (${ind.fmt(e55[n])}).` });
+    }
+    if (rA && rB && n - rB.end <= 5 && rB.lo < rA.lo && rB.peak < rA.peak) {
+      notes.push({ kind: 'up', text: `Divergencia alcista: el precio hizo un mínimo más bajo pero el valle rojo es más pequeño. Proyecta rebote hacia la EMA 55 (${ind.fmt(e55[n])}).` });
+    }
+
+    // No perseguir el precio
+    if (mon === 'vc' && cur.sign > 0 && cur.len >= 5 && price - e55[n] > FAR_ATR * a) {
+      notes.push({ kind: 'warn', text: 'Valle verde desarrollado y precio lejos de las medias: "ahí no se compra, ahí se vende o se protege".' });
+    }
+
+    // Condiciones de entrada (sección 4)
+    const recent = cs.slice(-3);
+    const minLow = Math.min(...recent.map((c) => c.low)), maxHigh = Math.max(...recent.map((c) => c.high));
+    const nodeBelow = nodesBelow[0], nodeAbove = nodesAbove[0];
+    const resistAbove = [e55[n], vp.poc].filter((p) => p > price && p - price < NEAR_ATR * a);
+    const supportBelow = [e55[n], vp.poc].filter((p) => p < price && price - p < NEAR_ATR * a);
+
+    const long = [
+      { ok: (above && trend === 'up') || !!(rr && rr.confirmed && rr.dir > 0), text: 'A favor de tendencia: precio y EMA 10 sobre la EMA 55 (o rompe y apoya alcista)' },
+      { ok: Math.abs(minLow - e55[n]) <= NEAR_ATR * a || (nodeBelow != null && price - nodeBelow <= NEAR_ATR * a) || (price - vp.poc >= -0.1 * a && price - vp.poc <= NEAR_ATR * a),
+        text: 'Retroceso a la EMA 55 o a un nodo de volumen' },
+      { ok: (mon === 'rc' && nearZero) || (cur.sign > 0 && young && prev && prev.sign < 0), text: 'Monitor: valle rojo que gira a rojo claro cerca del punto 0 (o nace el valle verde)' },
+      { ok: !adxUp || (cur.sign > 0 && young), text: 'ADX: la caída pierde fuerza (pendiente negativa) o se quiebra al alza con el valle verde' },
+    ];
+    const short = [
+      { ok: (!above && trend === 'down') || !!(rr && rr.confirmed && rr.dir < 0), text: 'A favor de tendencia: precio y EMA 10 bajo la EMA 55 (o rompe y apoya bajista)' },
+      { ok: Math.abs(maxHigh - e55[n]) <= NEAR_ATR * a || (nodeAbove != null && nodeAbove - price <= NEAR_ATR * a) || (vp.poc - price >= -0.1 * a && vp.poc - price <= NEAR_ATR * a),
+        text: 'Rebote a la EMA 55 o al POC por encima' },
+      { ok: mon === 'vo' || (cur.sign < 0 && young && prev && prev.sign > 0), text: 'Monitor: valle verde que gira a verde oscuro (o nace el valle rojo)' },
+      { ok: !adxUp || (cur.sign < 0 && young), text: 'ADX: la subida pierde fuerza o toma pendiente positiva con el valle rojo' },
+    ];
+    const longOk = long.every((c) => c.ok), shortOk = short.every((c) => c.ok);
+    if (longOk && resistAbove.length) {
+      notes.push({ kind: 'warn', text: `Entrada alcista chocando con resistencia (${resistAbove.map(ind.fmt).join(' y ')} justo encima): se invalida o se opera con precaución extrema.` });
+    }
+    if (shortOk && supportBelow.length) {
+      notes.push({ kind: 'warn', text: `Entrada bajista sobre soporte (${supportBelow.map(ind.fmt).join(' y ')} justo debajo): precaución.` });
+    }
+
+    return {
+      tf, horizon: HORIZON[tf], price, atr: a, e10: e10[n], e55: e55[n], trend, above,
+      mon, monDirUp: dirUp, nearZero, valley: cur, adx: adxV, adxUp, strong, vp, nodesAbove, nodesBelow,
+      emaTxt, monTxt, adxTxt, volTxt, projection, projDir, notes,
+      long, short, longOk: longOk && !resistAbove.length, shortOk: shortOk && !supportBelow.length,
+      // mínimo y máximo del retroceso: últimas 6 velas
+      recentLow: Math.min(...cs.slice(-6).map((c) => c.low)), recentHigh: Math.max(...cs.slice(-6).map((c) => c.high)),
+      swingLow: Math.min(...cs.slice(-50).map((c) => c.low)), swingHigh: Math.max(...cs.slice(-50).map((c) => c.high)),
+    };
+  }
+
+  // Plan operativo en 4H, con el gatillo afinado en 1H y el contexto del Diario.
+  function plan(r4, r1, rd, fmt) {
+    if (!r4) return null;
+    const side = r4.longOk ? 'long' : r4.shortOk ? 'short' : null;
+    if (!side) {
+      // qué falta para la entrada a favor de la tendencia de 4H
+      const want = r4.trend === 'up' ? 'long' : 'short';
+      const missing = r4[want].filter((c) => !c.ok).map((c) => c.text);
+      return { side: null, want, missing };
+    }
+    const entry = r4.price, a = r4.atr;
+    const counter = rd && rd.trend !== (side === 'long' ? 'up' : 'down');
+    let stop, target, stopWhy, targetWhy;
+    if (side === 'long') {
+      stop = r4.recentLow - 0.2 * a;
+      stopWhy = 'por debajo del último mínimo de 4H';
+      if (counter && rd.e55 > entry + 0.3 * a) { target = rd.e55; targetWhy = 'EMA 55 diaria (operación contra la tendencia diaria: tomar ganancias rápido)'; }
+      else if (r4.vp.poc > entry + 0.3 * a) { target = r4.vp.poc; targetWhy = 'POC por encima'; }
+      else if (r4.nodesAbove.length) { target = r4.nodesAbove[0]; targetWhy = 'siguiente nodo de volumen por encima'; }
+      else if (r4.swingHigh > entry + 0.3 * a) { target = r4.swingHigh; targetWhy = 'último máximo de 4H'; }
+    } else {
+      // sobre la EMA 55 solo si el precio está topando con ella; si no, sobre el máximo del rebote
+      const atEma = r4.e55 > entry && r4.e55 - entry <= a;
+      stop = Math.max(r4.recentHigh, atEma ? r4.e55 : -Infinity) + 0.2 * a;
+      stopWhy = atEma ? 'sobre la EMA 55 y el último máximo de 4H' : 'sobre el último máximo de 4H';
+      if (counter && rd.e55 < entry - 0.3 * a) { target = rd.e55; targetWhy = 'EMA 55 diaria (operación contra la tendencia diaria: tomar ganancias rápido)'; }
+      else if (r4.vp.poc < entry - 0.3 * a) { target = r4.vp.poc; targetWhy = 'POC por debajo'; }
+      else if (r4.nodesBelow.length) { target = r4.nodesBelow[0]; targetWhy = 'siguiente nodo de volumen por debajo'; }
+      else if (r4.swingLow < entry - 0.3 * a) { target = r4.swingLow; targetWhy = 'último mínimo de 4H'; }
+    }
+    let trigger = null;
+    if (r1) {
+      trigger = side === 'long'
+        ? { ok: r1.mon === 'rc' || (r1.valley.sign > 0 && r1.valley.len <= 3), text: 'Gatillo en 1H: monitor en rojo claro o naciendo el valle verde' }
+        : { ok: r1.mon === 'vo' || (r1.valley.sign < 0 && r1.valley.len <= 3), text: 'Gatillo en 1H: monitor en verde oscuro o naciendo el valle rojo' };
+    }
+    const exit = side === 'long' ? 'o cuando el monitor de 4H gire a verde oscuro' : 'o cuando el monitor de 4H gire a rojo claro';
+    // un stop a más de 3 velas medias de distancia suele indicar que se entra tarde
+    const wide = Math.abs(entry - stop) > 3 * a;
+    return {
+      side, entry, stop, target: target ?? null, stopWhy, targetWhy: targetWhy || 'sin objetivo claro en el volumen', exit, counter, trigger, wide,
+      zone: `cerca de ${fmt(r4.e55)} (EMA 55 de 4H)`,
+    };
+  }
+
+  /**
+   * byTf: { '1h': velas, '4h': velas, '1d': velas }.
+   * ind: funciones de indicadores de la app { ema, squeeze, adx, atr, vpvr, monColor, fmt }.
+   */
+  function analyze(byTf, ind) {
+    const reads = {};
+    for (const tf of ['1h', '4h', '1d']) reads[tf] = byTf[tf] ? readTf(tf, byTf[tf], ind) : null;
+    const r4 = reads['4h'], rd = reads['1d'];
+    const global = [];
+    if (r4 && rd) {
+      if (r4.longOk && rd.trend === 'down') global.push({ kind: 'warn', text: 'El largo de 4H va contra la tendencia bajista del Diario: es solo un rebote, con más riesgo. Tomar ganancias rápido en la EMA 55 diaria.' });
+      if (r4.shortOk && rd.trend === 'up') global.push({ kind: 'warn', text: 'El corto de 4H va contra la tendencia alcista del Diario: es solo un retroceso. Tomar ganancias rápido en la EMA 55 diaria.' });
+    }
+    return { reads, plan: plan(r4, reads['1h'], rd, ind.fmt), global };
+  }
+
+  window.TPStrategies = { tradingLatino: { name: 'TradingLatino (Jaime Merino)', intervals: ['1h', '4h', '1d'], analyze } };
+})();
+
+</script>
+  <script>window.TP_VERSION = "3.2 (3 nov 2026)";</script>
 <script>
 /* Datos para Trading Pedro sin servidor: descarga las velas de Binance desde el
  * navegador y calcula Smart Money con smc.js. Hace lo mismo que /api/data de
@@ -1259,12 +1607,13 @@ button.link:hover { color: var(--bear); }
   const C = {
     bull: '#2ECC8F', bear: '#F0506E', accent: '#F5B841', text: '#AEB7C8',
     grid: 'rgba(255,255,255,0.035)', border: 'rgba(255,255,255,0.08)',
-    ema20: '#F5B841', ema50: '#5AA9FF', sma200: '#B48CFF', ema600: '#FF7A45', bb: 'rgba(141,151,171,0.75)',
+    ema10: '#4FC3F7', ema20: '#F5B841', ema50: '#5AA9FF', ema55: '#C8963E', sma200: '#B48CFF', ema600: '#FF7A45', bb: 'rgba(141,151,171,0.75)',
     blue: '#5AA9FF', bg: '#0B0F16',
   };
 
   const DEFAULT_SHOW = {
-    ema20: true, ema50: true, sma200: false, ema600: true, bb: false, vol: true, rsi: true, macd: false, sqz: false, adx: false,
+    ema10: false, ema20: true, ema50: true, ema55: false, sma200: false, ema600: true, bb: false, vol: true, rsi: true, macd: false,
+    sqz: false, adx: false, vpvr: false,
     ob: true, fvg: true, structure: true, swings: true, liquidity: false, autoFib: false, activeOnly: true,
     walls: true, levels: true, sessions: true,
   };
@@ -1355,8 +1704,10 @@ button.link:hover { color: var(--bear); }
   candles.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.18 } });
   const volume = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
   chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
+  const ema10 = chart.addLineSeries(line(C.ema10));
   const ema20 = chart.addLineSeries(line(C.ema20));
   const ema50 = chart.addLineSeries(line(C.ema50));
+  const ema55 = chart.addLineSeries(line(C.ema55));
   const sma200 = chart.addLineSeries(line(C.sma200));
   const ema600 = chart.addLineSeries(line(C.ema600));
   const bbUp = chart.addLineSeries(line(C.bb, 1));
@@ -1393,7 +1744,7 @@ button.link:hover { color: var(--bear); }
   const adxS = adxChart.addLineSeries(line('#F5B841', 2, {
     lastValueVisible: true, priceFormat: { type: 'price', precision: 1, minMove: 0.1 },
   }));
-  adxS.createPriceLine({ price: 25, color: 'rgba(174,183,200,0.45)', lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: false });
+  adxS.createPriceLine({ price: 23, color: 'rgba(174,183,200,0.45)', lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: false });
 
   const allCharts = [chart, rsiChart, macdChart, sqzChart, adxChart];
   let syncing = false;
@@ -1500,6 +1851,48 @@ button.link:hover { color: var(--bear); }
     return { val, st };
   }
   const SQZ_DOT = { on: '#FF7A45', off: '#8D97AB', none: '#5AA9FF' };
+  // Colores del monitor con los nombres de TradingLatino: claro = direccionalidad alcista,
+  // oscuro = direccionalidad bajista, dentro de un valle verde (sobre 0) o rojo (bajo 0).
+  const MON = {
+    vc: { color: '#7DF0C0', name: 'verde claro: impulso alcista' },
+    vo: { color: '#1E8A5F', name: 'verde oscuro: el impulso alcista se debilita' },
+    ro: { color: '#C2334F', name: 'rojo oscuro: impulso bajista' },
+    rc: { color: '#F7A0B2', name: 'rojo claro: la caída se frena' },
+  };
+  const monColor = (v, prev) => (v >= 0 ? (v >= (prev ?? v) ? 'vc' : 'vo') : (v < (prev ?? v) ? 'ro' : 'rc'));
+  const atr = (cs, p = 14) => rma(trueRange(cs), p);
+
+  // Perfil de volumen: el volumen de cada vela se reparte por igual entre los niveles de precio
+  // que tocó. POC = nivel con más volumen; área de valor = 70 % del volumen alrededor del POC;
+  // nodos = picos locales de volumen (al menos la mitad del POC).
+  function vpvr(cs, n = 48) {
+    if (!cs.length) return null;
+    const lo = Math.min(...cs.map((c) => c.low)), hi = Math.max(...cs.map((c) => c.high));
+    if (!(hi > lo)) return null;
+    const step = (hi - lo) / n;
+    const rows = Array.from({ length: n }, (_, i) => ({ p0: lo + i * step, p1: lo + (i + 1) * step, up: 0, down: 0 }));
+    for (const c of cs) {
+      const span = Math.max(c.high - c.low, step * 1e-6);
+      const a = Math.min(n - 1, Math.floor((c.low - lo) / step)), b = Math.min(n - 1, Math.floor((c.high - lo) / step));
+      for (let i = a; i <= b; i++) {
+        const part = c.high === c.low ? 1 : (Math.min(c.high, rows[i].p1) - Math.max(c.low, rows[i].p0)) / span;
+        rows[i][c.close >= c.open ? 'up' : 'down'] += c.volume * Math.max(0, part);
+      }
+    }
+    rows.forEach((r) => { r.tot = r.up + r.down; r.mid = (r.p0 + r.p1) / 2; });
+    let pi = 0;
+    rows.forEach((r, i) => { if (r.tot > rows[pi].tot) pi = i; });
+    const total = rows.reduce((s, r) => s + r.tot, 0);
+    let a = pi, b = pi, inVa = rows[pi].tot;
+    while (inVa < total * 0.7 && (a > 0 || b < n - 1)) {
+      const da = a > 0 ? rows[a - 1].tot : -1, db = b < n - 1 ? rows[b + 1].tot : -1;
+      if (db >= da) inVa += rows[++b].tot; else inVa += rows[--a].tot;
+    }
+    const max = rows[pi].tot;
+    const nodes = rows.filter((r, i) => r.tot >= max * 0.5
+      && r.tot >= (rows[i - 1]?.tot ?? 0) && r.tot >= (rows[i + 1]?.tot ?? 0)).map((r) => r.mid);
+    return { rows, max, poc: rows[pi].mid, vah: rows[b].p1, val: rows[a].p0, nodes };
+  }
 
   function computeIndicators() {
     const cs = state.candles, close = cs.map((c) => c.close), times = cs.map((c) => c.time);
@@ -1508,26 +1901,21 @@ button.link:hover { color: var(--bear); }
     state.ind = { sq, ad };
     return {
       vol: cs.map((c) => ({ time: c.time, value: c.volume, color: c.close >= c.open ? 'rgba(46,204,143,0.35)' : 'rgba(240,80,110,0.35)' })),
-      ema20: ser(ema(close, 20)), ema50: ser(ema(close, 50)), sma200: ser(sma(close, 200)),
+      ema10: ser(ema(close, 10)), ema20: ser(ema(close, 20)), ema50: ser(ema(close, 50)), ema55: ser(ema(close, 55)), sma200: ser(sma(close, 200)),
       ema600: ser(ema(close, 600)),
       bbUp: ser(bb.up), bbMid: ser(bb.mid), bbLo: ser(bb.lo),
       rsi: ser(rsi(close)),
       macd: ser(md.m), signal: ser(md.s),
       hist: md.h.map((v, i) => (v == null ? { time: times[i] }
         : { time: times[i], value: v, color: v >= 0 ? 'rgba(46,204,143,0.6)' : 'rgba(240,80,110,0.6)' })),
-      // verde/rojo intenso cuando el momento crece en su dirección, apagado cuando se debilita
-      sqzHist: sq.val.map((v, i) => {
-        if (v == null) return { time: times[i] };
-        const prev = sq.val[i - 1] ?? v;
-        const color = v >= 0 ? (v >= prev ? '#2ECC8F' : 'rgba(46,204,143,0.4)') : (v <= prev ? '#F0506E' : 'rgba(240,80,110,0.4)');
-        return { time: times[i], value: v, color };
-      }),
+      sqzHist: sq.val.map((v, i) => (v == null ? { time: times[i] }
+        : { time: times[i], value: v, color: MON[monColor(v, sq.val[i - 1])].color })),
       sqzDots: sq.st.map((s, i) => (s == null ? { time: times[i] } : { time: times[i], value: 0, color: SQZ_DOT[s] })),
       adx: ser(ad.adx), pdi: ser(ad.pdi), mdi: ser(ad.mdi),
     };
   }
   const SERIES = {
-    vol: volume, ema20, ema50, sma200, ema600, bbUp, bbMid, bbLo,
+    vol: volume, ema10, ema20, ema50, ema55, sma200, ema600, bbUp, bbMid, bbLo,
     rsi: rsiS, macd: macdLine, signal: macdSignal, hist: macdHist,
     sqzHist, sqzDots, adx: adxS, pdi: pdiS, mdi: mdiS,
   };
@@ -1537,10 +1925,10 @@ button.link:hover { color: var(--bear); }
     const { sq, ad } = state.ind || {}; if (!sq) return;
     const n = sq.val.length - 1, v = sq.val[n], st = sq.st[n];
     const stTxt = { on: 'compresión activa', off: 'compresión liberada', none: 'sin compresión' }[st] || '';
-    const dirTxt = v == null ? '' : `momento ${v >= 0 ? 'alcista' : 'bajista'} ${Math.abs(v) >= Math.abs(sq.val[n - 1] ?? v) ? 'creciendo' : 'perdiendo fuerza'}`;
+    const dirTxt = v == null ? '' : MON[monColor(v, sq.val[n - 1])].name;
     $('#sqz-read').textContent = [stTxt, dirTxt].filter(Boolean).join(' · ');
     const a = ad.adx[n], pd = ad.pdi[n], md = ad.mdi[n];
-    $('#adx-read').textContent = a == null ? '' : `${a.toFixed(1).replace('.', ',')} · ${a >= 25 ? 'tendencia fuerte' : a >= 20 ? 'tendencia débil' : 'sin tendencia'} · ${pd >= md ? '+DI domina (alcista)' : '−DI domina (bajista)'}`;
+    $('#adx-read').textContent = a == null ? '' : `${a.toFixed(1).replace('.', ',')} · ${a >= 23 ? 'con fuerza' : 'sin fuerza'} · pendiente ${a >= (ad.adx[n - 1] ?? a) ? 'positiva' : 'negativa'} · ${pd >= md ? '+DI domina' : '−DI domina'}`;
   }
 
   function setAllData() {
@@ -1562,8 +1950,10 @@ button.link:hover { color: var(--bear); }
     requestAnimationFrame(() => redraw());
     setTimeout(() => redraw(), 50);
     volume.applyOptions({ visible: s.vol });
+    ema10.applyOptions({ visible: s.ema10 });
     ema20.applyOptions({ visible: s.ema20 });
     ema50.applyOptions({ visible: s.ema50 });
+    ema55.applyOptions({ visible: s.ema55 });
     sma200.applyOptions({ visible: s.sma200 });
     ema600.applyOptions({ visible: s.ema600 });
     [bbUp, bbMid, bbLo].forEach((x) => x.applyOptions({ visible: s.bb }));
@@ -1792,6 +2182,7 @@ button.link:hover { color: var(--bear); }
     ctx.textBaseline = 'alphabetic';
 
     drawSessions(paneW, paneH);
+    drawVpvr(paneW);
     drawLevels(ctx, candles, paneW);
 
     const s = state.smc, only = state.show.activeOnly;
@@ -2478,7 +2869,7 @@ button.link:hover { color: var(--bear); }
     updateLast();
     onPrice(c.close);
     redraw();
-    if (k.x) { refreshSmcSoon(); kronosOnData(true); } // vela cerrada: recalcular Smart Money y Kronos
+    if (k.x) { refreshSmcSoon(); kronosOnData(true); stRunSoon(); } // vela cerrada: recalcular Smart Money, Kronos y estrategia
   }
   function onTicker(d) {
     const p = parseFloat(d.P);
@@ -2637,9 +3028,16 @@ button.link:hover { color: var(--bear); }
   pollDepth();
   setInterval(pollDepth, 60000);
   // Si Binance pausa las consultas, se avisa una vez y se reanuda sola al terminar.
-  window.TPBinance.onPause((until) => {
+  let netToastShown = false;
+  window.TPBinance.onPause((until, why) => {
     const hora = new Date(until).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
-    toast(`Binance pidió pausar las consultas por exceso de uso. Trading Pedro se detiene y reanuda solo a las ${hora}. Si tienes varias ventanas abiertas, cierra las que no uses.`, true);
+    if (why !== 'net') {
+      toast(`Binance pidió pausar las consultas por exceso de uso. Trading Pedro se detiene y reanuda solo a las ${hora}. Si tienes varias ventanas abiertas, cierra las que no uses.`, true);
+    } else if (!netToastShown) {
+      // se avisa una sola vez; las esperas siguientes se alargan solas
+      netToastShown = true;
+      toast(`Binance no responde: puede ser falta de conexión o un bloqueo por exceso de consultas. Trading Pedro espera y vuelve a probar a las ${hora}. Si tienes varias ventanas abiertas, cierra las que no uses.`, true);
+    }
     setStatus('warn', `En pausa hasta las ${hora}`);
     setTimeout(() => { setStatus('live', 'En vivo'); pollDepth(); load(true); }, Math.max(0, until - Date.now()) + 500);
   });
@@ -2931,6 +3329,41 @@ button.link:hover { color: var(--bear); }
     { name: 'Londres', from: 7, to: 16, col: '#F5B841' },
     { name: 'Nueva York', from: 13, to: 22, col: '#2ECC8F' },
   ];
+  // Perfil de volumen del rango visible, pegado al borde izquierdo (a la derecha va el libro de órdenes).
+  let vpMemo = { key: '', vp: null };
+  function visibleVpvr() {
+    const r = chart.timeScale().getVisibleLogicalRange(), cs = state.candles;
+    if (!r || !cs.length) return null;
+    const a = Math.max(0, Math.floor(r.from)), b = Math.min(cs.length - 1, Math.ceil(r.to));
+    if (b - a < 5) return null;
+    const key = `${a}|${b}|${cs.length}|${cs[b].close}|${cs[b].volume}`;
+    if (vpMemo.key !== key) vpMemo = { key, vp: vpvr(cs.slice(a, b + 1), 60) };
+    return vpMemo.vp;
+  }
+  function drawVpvr(paneW) {
+    if (!state.show.vpvr) return;
+    const vp = visibleVpvr();
+    if (!vp) return;
+    const maxLen = paneW * 0.2;
+    ctx.save();
+    for (const r of vp.rows) {
+      const y1 = candles.priceToCoordinate(r.p1), y2 = candles.priceToCoordinate(r.p0);
+      if (y1 == null || y2 == null || !r.tot) continue;
+      const h = Math.max(1, Math.abs(y2 - y1) - 1), y = Math.min(y1, y2), inVa = r.mid >= vp.val && r.mid <= vp.vah;
+      const wu = (r.up / vp.max) * maxLen, wd = (r.down / vp.max) * maxLen;
+      ctx.fillStyle = rgba('#5AA9FF', inVa ? 0.34 : 0.16); ctx.fillRect(0, y, wu, h);
+      ctx.fillStyle = rgba('#F5B841', inVa ? 0.3 : 0.14); ctx.fillRect(wu, y, wd, h);
+    }
+    const y = candles.priceToCoordinate(vp.poc);
+    if (y != null) {
+      ctx.strokeStyle = 'rgba(230,234,242,0.75)'; ctx.lineWidth = 1; ctx.setLineDash([6, 4]);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(paneW, y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(230,234,242,0.9)'; ctx.textAlign = 'left';
+      ctx.fillText(`POC ${fmtPrice(vp.poc)}`, maxLen + 6, y - 3);
+    }
+    ctx.restore();
+  }
+
   function drawSessions(paneW, paneH) {
     if (!state.show.sessions || !['1m', '5m', '15m', '1h'].includes(state.dataInterval || state.interval)) return;
     const r = chart.timeScale().getVisibleLogicalRange();
@@ -3628,6 +4061,133 @@ button.link:hover { color: var(--bear); }
     afterSuggest(`Objetivo según Kronos: cierre esperado de ${fmtPrice(c.target)} en ${k.res.times.length} velas.`);
   });
   kCheck();
+
+  // ---------- estrategias ----------
+  // La estrategia elegida prepara el gráfico con sus indicadores y lee 1H, 4H y Diario.
+  const ST_SHOW = { tradingLatino: ['ema10', 'ema55', 'sqz', 'adx', 'vpvr'] };
+  const st = { pick: store.get('strategy', ''), res: null, timer: null, seq: 0, err: null };
+  const stInd = { ema, squeeze, adx, atr, vpvr, monColor, fmt: fmtPrice };
+  const TF_NAME = { '1h': '1H', '4h': '4H', '1d': 'Diario' };
+  const projClass = (d) => (d === 'up' || d === 'range-up' ? 'up' : d === 'down' || d === 'range-down' ? 'down' : 'flat');
+  const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
+  function stPick(name) {
+    const before = st.pick;
+    st.pick = name; store.set('strategy', name);
+    // al elegir una estrategia se encienden sus indicadores; al quitarla se apagan los que encendió
+    const on = ST_SHOW[name] || [], off = (ST_SHOW[before] || []).filter((k) => !on.includes(k));
+    const turnedOn = store.get('strategyTurnedOn', []);
+    off.forEach((k) => { if (turnedOn.includes(k)) state.show[k] = false; });
+    const now = on.filter((k) => !state.show[k]);
+    now.forEach((k) => { state.show[k] = true; });
+    store.set('strategyTurnedOn', name ? turnedOn.filter((k) => on.includes(k)).concat(now) : []);
+    store.set('show', state.show);
+    $$('[data-show]').forEach((cb) => { cb.checked = !!state.show[cb.dataset.show]; });
+    applyVisibility();
+    st.res = null; st.err = null;
+    stRender();
+    stRun();
+  }
+
+  async function stRun() {
+    clearTimeout(st.timer);
+    const S = window.TPStrategies && window.TPStrategies[st.pick];
+    if (!S) return;
+    st.timer = setTimeout(stRun, 60000);
+    if (document.hidden && st.res) return;
+    const seq = ++st.seq;
+    $('#st-state').textContent = 'leyendo…'; $('#st-state').className = 'k-state';
+    try {
+      const data = await Promise.all(S.intervals.map((iv) => fetchData(iv)));
+      if (seq !== st.seq) return;
+      const byTf = {};
+      S.intervals.forEach((iv, i) => { byTf[iv] = data[i].candles; });
+      st.res = S.analyze(byTf, stInd); st.err = null; st.at = Date.now();
+    } catch (e) {
+      if (seq !== st.seq) return;
+      st.err = e.message;
+    }
+    stRender();
+  }
+  let stSoon;
+  const stRunSoon = () => { clearTimeout(stSoon); if (st.pick) stSoon = setTimeout(stRun, 1200); };
+
+  function stTfHtml(r, main) {
+    if (!r) return '';
+    const notes = r.notes.map((x) => `<li class="${x.kind}">${esc(x.text)}</li>`).join('');
+    return `<div class="st-tf${main ? ' main' : ''}">
+        <div class="st-tf-head"><b>${TF_NAME[r.tf]}</b><span class="muted">${r.horizon}</span></div>
+        <p class="st-proj ${projClass(r.projDir)}">${esc(r.projection)}</p>
+        <dl>
+          <dt>EMAs</dt><dd>${esc(r.emaTxt)}<span class="zone mono">EMA 10 ${fmtPrice(r.e10)} · EMA 55 ${fmtPrice(r.e55)}</span></dd>
+          <dt>Monitor</dt><dd><i class="sw" style="background:${MON[r.mon].color}"></i>${esc(r.monTxt)}</dd>
+          <dt>ADX</dt><dd>${esc(r.adxTxt)}</dd>
+          <dt>Volumen</dt><dd>${esc(r.volTxt)}</dd>
+        </dl>
+        ${notes ? `<ul class="st-notes">${notes}</ul>` : ''}
+      </div>`;
+  }
+  const checks = (list) => `<ul class="st-checks">${list.map((c) => `<li class="${c.ok ? 'ok' : 'no'}">${c.ok ? '✓' : '✗'} ${esc(c.text)}</li>`).join('')}</ul>`;
+
+  function stPlanHtml(p, r4) {
+    if (!p) return '';
+    if (!p.side) {
+      return `<div class="st-plan"><h3>Plan operativo · 4H</h3>
+        <p class="st-none">Sin entrada según la estrategia.</p>
+        <p class="muted">Para un ${p.want === 'long' ? 'largo' : 'corto'} a favor de la tendencia de 4H falta:</p>
+        ${checks(r4[p.want])}</div>`;
+    }
+    const L = p.side === 'long';
+    return `<div class="st-plan"><h3>Plan operativo · 4H</h3>
+      <p class="st-proj ${L ? 'up' : 'down'}">${L ? 'Entrada en largo ▲' : 'Entrada en corto ▼'}${p.counter ? ' · contra la tendencia diaria' : ''}</p>
+      <dl>
+        <dt>Entrada</dt><dd><span class="mono">${fmtPrice(p.entry)}</span><span class="zone">${esc(p.zone)}</span></dd>
+        <dt>Stop</dt><dd><span class="mono">${fmtPrice(p.stop)}</span><span class="zone">${esc(p.stopWhy)}</span></dd>
+        <dt>Objetivo</dt><dd><span class="mono">${p.target == null ? '—' : fmtPrice(p.target)}</span><span class="zone">${esc(p.targetWhy)}, ${esc(p.exit)}</span></dd>
+      </dl>
+      ${p.wide ? '<ul class="st-notes"><li class="warn">Stop muy amplio (más de 3 velas medias): probablemente se entra tarde, lejos de la zona.</li></ul>' : ''}
+      ${p.trigger ? checks([p.trigger]) : ''}
+      ${checks(r4[p.side])}
+      <button type="button" class="k-btn st-btn" id="st-to-calc">Llevar a la calculadora</button></div>`;
+  }
+
+  function stRender() {
+    const out = $('#st-out'), S = window.TPStrategies && window.TPStrategies[st.pick];
+    $('#st-pick').value = st.pick;
+    $('#st-note').hidden = !S;
+    if (!S) { out.innerHTML = ''; $('#st-state').textContent = ''; return; }
+    const stEl = $('#st-state');
+    if (st.err && !st.res) {
+      out.innerHTML = `<p class="k-err">No se pudo leer: ${esc(st.err)}</p>`;
+      stEl.textContent = 'error'; stEl.className = 'k-state err';
+      return;
+    }
+    if (!st.res) { out.innerHTML = '<p class="muted">Leyendo 1H, 4H y Diario…</p>'; return; }
+    const { reads, plan, global } = st.res;
+    if (!reads['4h']) { out.innerHTML = '<p class="muted">No hay suficientes velas de 4H.</p>'; return; }
+    stEl.textContent = st.err ? 'sin actualizar' : 'al día ' + fmtShort(Math.floor(st.at / 1000)).split(' ').pop();
+    stEl.className = 'k-state ' + (st.err ? 'err' : 'ok');
+    const g = global.map((x) => `<li class="${x.kind}">${esc(x.text)}</li>`).join('');
+    out.innerHTML = `${stTfHtml(reads['4h'], true)}${stTfHtml(reads['1d'])}
+      ${g ? `<ul class="st-notes">${g}</ul>` : ''}
+      ${stPlanHtml(plan, reads['4h'])}
+      <details class="st-more"><summary>Lectura de 1H (para afinar la entrada)</summary>${stTfHtml(reads['1h'])}</details>`;
+  }
+
+  $('#st-pick').addEventListener('change', (e) => stPick(e.target.value));
+  $('#st-out').addEventListener('click', (e) => {
+    if (!e.target.closest('#st-to-calc') || !st.res || !st.res.plan || !st.res.plan.side) return;
+    const p = st.res.plan, c = state.calc;
+    c.side = p.side; c.entry = Math.round(p.entry * 100) / 100;
+    c.stop = Math.round(p.stop * 100) / 100;
+    c.target = p.target == null ? null : Math.round(p.target * 100) / 100;
+    c.t0 = null;
+    afterSuggest(`Plan de TradingLatino en 4H: stop ${p.stopWhy}; objetivo en ${p.targetWhy}.`);
+    $('#calc-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && st.pick) stRunSoon(); });
+  stRender();
+  if (st.pick) stRun();
 
   // ---------- controles ----------
   $$('#tfs button').forEach((b) => b.addEventListener('click', () => {

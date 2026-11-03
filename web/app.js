@@ -13,12 +13,13 @@
   const C = {
     bull: '#2ECC8F', bear: '#F0506E', accent: '#F5B841', text: '#AEB7C8',
     grid: 'rgba(255,255,255,0.035)', border: 'rgba(255,255,255,0.08)',
-    ema20: '#F5B841', ema50: '#5AA9FF', sma200: '#B48CFF', ema600: '#FF7A45', bb: 'rgba(141,151,171,0.75)',
+    ema10: '#4FC3F7', ema20: '#F5B841', ema50: '#5AA9FF', ema55: '#C8963E', sma200: '#B48CFF', ema600: '#FF7A45', bb: 'rgba(141,151,171,0.75)',
     blue: '#5AA9FF', bg: '#0B0F16',
   };
 
   const DEFAULT_SHOW = {
-    ema20: true, ema50: true, sma200: false, ema600: true, bb: false, vol: true, rsi: true, macd: false, sqz: false, adx: false,
+    ema10: false, ema20: true, ema50: true, ema55: false, sma200: false, ema600: true, bb: false, vol: true, rsi: true, macd: false,
+    sqz: false, adx: false, vpvr: false,
     ob: true, fvg: true, structure: true, swings: true, liquidity: false, autoFib: false, activeOnly: true,
     walls: true, levels: true, sessions: true,
   };
@@ -109,8 +110,10 @@
   candles.priceScale().applyOptions({ scaleMargins: { top: 0.08, bottom: 0.18 } });
   const volume = chart.addHistogramSeries({ priceScaleId: 'vol', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
   chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
+  const ema10 = chart.addLineSeries(line(C.ema10));
   const ema20 = chart.addLineSeries(line(C.ema20));
   const ema50 = chart.addLineSeries(line(C.ema50));
+  const ema55 = chart.addLineSeries(line(C.ema55));
   const sma200 = chart.addLineSeries(line(C.sma200));
   const ema600 = chart.addLineSeries(line(C.ema600));
   const bbUp = chart.addLineSeries(line(C.bb, 1));
@@ -147,7 +150,7 @@
   const adxS = adxChart.addLineSeries(line('#F5B841', 2, {
     lastValueVisible: true, priceFormat: { type: 'price', precision: 1, minMove: 0.1 },
   }));
-  adxS.createPriceLine({ price: 25, color: 'rgba(174,183,200,0.45)', lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: false });
+  adxS.createPriceLine({ price: 23, color: 'rgba(174,183,200,0.45)', lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: false });
 
   const allCharts = [chart, rsiChart, macdChart, sqzChart, adxChart];
   let syncing = false;
@@ -254,6 +257,48 @@
     return { val, st };
   }
   const SQZ_DOT = { on: '#FF7A45', off: '#8D97AB', none: '#5AA9FF' };
+  // Colores del monitor con los nombres de TradingLatino: claro = direccionalidad alcista,
+  // oscuro = direccionalidad bajista, dentro de un valle verde (sobre 0) o rojo (bajo 0).
+  const MON = {
+    vc: { color: '#7DF0C0', name: 'verde claro: impulso alcista' },
+    vo: { color: '#1E8A5F', name: 'verde oscuro: el impulso alcista se debilita' },
+    ro: { color: '#C2334F', name: 'rojo oscuro: impulso bajista' },
+    rc: { color: '#F7A0B2', name: 'rojo claro: la caída se frena' },
+  };
+  const monColor = (v, prev) => (v >= 0 ? (v >= (prev ?? v) ? 'vc' : 'vo') : (v < (prev ?? v) ? 'ro' : 'rc'));
+  const atr = (cs, p = 14) => rma(trueRange(cs), p);
+
+  // Perfil de volumen: el volumen de cada vela se reparte por igual entre los niveles de precio
+  // que tocó. POC = nivel con más volumen; área de valor = 70 % del volumen alrededor del POC;
+  // nodos = picos locales de volumen (al menos la mitad del POC).
+  function vpvr(cs, n = 48) {
+    if (!cs.length) return null;
+    const lo = Math.min(...cs.map((c) => c.low)), hi = Math.max(...cs.map((c) => c.high));
+    if (!(hi > lo)) return null;
+    const step = (hi - lo) / n;
+    const rows = Array.from({ length: n }, (_, i) => ({ p0: lo + i * step, p1: lo + (i + 1) * step, up: 0, down: 0 }));
+    for (const c of cs) {
+      const span = Math.max(c.high - c.low, step * 1e-6);
+      const a = Math.min(n - 1, Math.floor((c.low - lo) / step)), b = Math.min(n - 1, Math.floor((c.high - lo) / step));
+      for (let i = a; i <= b; i++) {
+        const part = c.high === c.low ? 1 : (Math.min(c.high, rows[i].p1) - Math.max(c.low, rows[i].p0)) / span;
+        rows[i][c.close >= c.open ? 'up' : 'down'] += c.volume * Math.max(0, part);
+      }
+    }
+    rows.forEach((r) => { r.tot = r.up + r.down; r.mid = (r.p0 + r.p1) / 2; });
+    let pi = 0;
+    rows.forEach((r, i) => { if (r.tot > rows[pi].tot) pi = i; });
+    const total = rows.reduce((s, r) => s + r.tot, 0);
+    let a = pi, b = pi, inVa = rows[pi].tot;
+    while (inVa < total * 0.7 && (a > 0 || b < n - 1)) {
+      const da = a > 0 ? rows[a - 1].tot : -1, db = b < n - 1 ? rows[b + 1].tot : -1;
+      if (db >= da) inVa += rows[++b].tot; else inVa += rows[--a].tot;
+    }
+    const max = rows[pi].tot;
+    const nodes = rows.filter((r, i) => r.tot >= max * 0.5
+      && r.tot >= (rows[i - 1]?.tot ?? 0) && r.tot >= (rows[i + 1]?.tot ?? 0)).map((r) => r.mid);
+    return { rows, max, poc: rows[pi].mid, vah: rows[b].p1, val: rows[a].p0, nodes };
+  }
 
   function computeIndicators() {
     const cs = state.candles, close = cs.map((c) => c.close), times = cs.map((c) => c.time);
@@ -262,26 +307,21 @@
     state.ind = { sq, ad };
     return {
       vol: cs.map((c) => ({ time: c.time, value: c.volume, color: c.close >= c.open ? 'rgba(46,204,143,0.35)' : 'rgba(240,80,110,0.35)' })),
-      ema20: ser(ema(close, 20)), ema50: ser(ema(close, 50)), sma200: ser(sma(close, 200)),
+      ema10: ser(ema(close, 10)), ema20: ser(ema(close, 20)), ema50: ser(ema(close, 50)), ema55: ser(ema(close, 55)), sma200: ser(sma(close, 200)),
       ema600: ser(ema(close, 600)),
       bbUp: ser(bb.up), bbMid: ser(bb.mid), bbLo: ser(bb.lo),
       rsi: ser(rsi(close)),
       macd: ser(md.m), signal: ser(md.s),
       hist: md.h.map((v, i) => (v == null ? { time: times[i] }
         : { time: times[i], value: v, color: v >= 0 ? 'rgba(46,204,143,0.6)' : 'rgba(240,80,110,0.6)' })),
-      // verde/rojo intenso cuando el momento crece en su dirección, apagado cuando se debilita
-      sqzHist: sq.val.map((v, i) => {
-        if (v == null) return { time: times[i] };
-        const prev = sq.val[i - 1] ?? v;
-        const color = v >= 0 ? (v >= prev ? '#2ECC8F' : 'rgba(46,204,143,0.4)') : (v <= prev ? '#F0506E' : 'rgba(240,80,110,0.4)');
-        return { time: times[i], value: v, color };
-      }),
+      sqzHist: sq.val.map((v, i) => (v == null ? { time: times[i] }
+        : { time: times[i], value: v, color: MON[monColor(v, sq.val[i - 1])].color })),
       sqzDots: sq.st.map((s, i) => (s == null ? { time: times[i] } : { time: times[i], value: 0, color: SQZ_DOT[s] })),
       adx: ser(ad.adx), pdi: ser(ad.pdi), mdi: ser(ad.mdi),
     };
   }
   const SERIES = {
-    vol: volume, ema20, ema50, sma200, ema600, bbUp, bbMid, bbLo,
+    vol: volume, ema10, ema20, ema50, ema55, sma200, ema600, bbUp, bbMid, bbLo,
     rsi: rsiS, macd: macdLine, signal: macdSignal, hist: macdHist,
     sqzHist, sqzDots, adx: adxS, pdi: pdiS, mdi: mdiS,
   };
@@ -291,10 +331,10 @@
     const { sq, ad } = state.ind || {}; if (!sq) return;
     const n = sq.val.length - 1, v = sq.val[n], st = sq.st[n];
     const stTxt = { on: 'compresión activa', off: 'compresión liberada', none: 'sin compresión' }[st] || '';
-    const dirTxt = v == null ? '' : `momento ${v >= 0 ? 'alcista' : 'bajista'} ${Math.abs(v) >= Math.abs(sq.val[n - 1] ?? v) ? 'creciendo' : 'perdiendo fuerza'}`;
+    const dirTxt = v == null ? '' : MON[monColor(v, sq.val[n - 1])].name;
     $('#sqz-read').textContent = [stTxt, dirTxt].filter(Boolean).join(' · ');
     const a = ad.adx[n], pd = ad.pdi[n], md = ad.mdi[n];
-    $('#adx-read').textContent = a == null ? '' : `${a.toFixed(1).replace('.', ',')} · ${a >= 25 ? 'tendencia fuerte' : a >= 20 ? 'tendencia débil' : 'sin tendencia'} · ${pd >= md ? '+DI domina (alcista)' : '−DI domina (bajista)'}`;
+    $('#adx-read').textContent = a == null ? '' : `${a.toFixed(1).replace('.', ',')} · ${a >= 23 ? 'con fuerza' : 'sin fuerza'} · pendiente ${a >= (ad.adx[n - 1] ?? a) ? 'positiva' : 'negativa'} · ${pd >= md ? '+DI domina' : '−DI domina'}`;
   }
 
   function setAllData() {
@@ -316,8 +356,10 @@
     requestAnimationFrame(() => redraw());
     setTimeout(() => redraw(), 50);
     volume.applyOptions({ visible: s.vol });
+    ema10.applyOptions({ visible: s.ema10 });
     ema20.applyOptions({ visible: s.ema20 });
     ema50.applyOptions({ visible: s.ema50 });
+    ema55.applyOptions({ visible: s.ema55 });
     sma200.applyOptions({ visible: s.sma200 });
     ema600.applyOptions({ visible: s.ema600 });
     [bbUp, bbMid, bbLo].forEach((x) => x.applyOptions({ visible: s.bb }));
@@ -546,6 +588,7 @@
     ctx.textBaseline = 'alphabetic';
 
     drawSessions(paneW, paneH);
+    drawVpvr(paneW);
     drawLevels(ctx, candles, paneW);
 
     const s = state.smc, only = state.show.activeOnly;
@@ -1232,7 +1275,7 @@
     updateLast();
     onPrice(c.close);
     redraw();
-    if (k.x) { refreshSmcSoon(); kronosOnData(true); } // vela cerrada: recalcular Smart Money y Kronos
+    if (k.x) { refreshSmcSoon(); kronosOnData(true); stRunSoon(); } // vela cerrada: recalcular Smart Money, Kronos y estrategia
   }
   function onTicker(d) {
     const p = parseFloat(d.P);
@@ -1391,9 +1434,16 @@
   pollDepth();
   setInterval(pollDepth, 60000);
   // Si Binance pausa las consultas, se avisa una vez y se reanuda sola al terminar.
-  window.TPBinance.onPause((until) => {
+  let netToastShown = false;
+  window.TPBinance.onPause((until, why) => {
     const hora = new Date(until).toLocaleTimeString('es-VE', { hour: '2-digit', minute: '2-digit' });
-    toast(`Binance pidió pausar las consultas por exceso de uso. Trading Pedro se detiene y reanuda solo a las ${hora}. Si tienes varias ventanas abiertas, cierra las que no uses.`, true);
+    if (why !== 'net') {
+      toast(`Binance pidió pausar las consultas por exceso de uso. Trading Pedro se detiene y reanuda solo a las ${hora}. Si tienes varias ventanas abiertas, cierra las que no uses.`, true);
+    } else if (!netToastShown) {
+      // se avisa una sola vez; las esperas siguientes se alargan solas
+      netToastShown = true;
+      toast(`Binance no responde: puede ser falta de conexión o un bloqueo por exceso de consultas. Trading Pedro espera y vuelve a probar a las ${hora}. Si tienes varias ventanas abiertas, cierra las que no uses.`, true);
+    }
     setStatus('warn', `En pausa hasta las ${hora}`);
     setTimeout(() => { setStatus('live', 'En vivo'); pollDepth(); load(true); }, Math.max(0, until - Date.now()) + 500);
   });
@@ -1685,6 +1735,41 @@
     { name: 'Londres', from: 7, to: 16, col: '#F5B841' },
     { name: 'Nueva York', from: 13, to: 22, col: '#2ECC8F' },
   ];
+  // Perfil de volumen del rango visible, pegado al borde izquierdo (a la derecha va el libro de órdenes).
+  let vpMemo = { key: '', vp: null };
+  function visibleVpvr() {
+    const r = chart.timeScale().getVisibleLogicalRange(), cs = state.candles;
+    if (!r || !cs.length) return null;
+    const a = Math.max(0, Math.floor(r.from)), b = Math.min(cs.length - 1, Math.ceil(r.to));
+    if (b - a < 5) return null;
+    const key = `${a}|${b}|${cs.length}|${cs[b].close}|${cs[b].volume}`;
+    if (vpMemo.key !== key) vpMemo = { key, vp: vpvr(cs.slice(a, b + 1), 60) };
+    return vpMemo.vp;
+  }
+  function drawVpvr(paneW) {
+    if (!state.show.vpvr) return;
+    const vp = visibleVpvr();
+    if (!vp) return;
+    const maxLen = paneW * 0.2;
+    ctx.save();
+    for (const r of vp.rows) {
+      const y1 = candles.priceToCoordinate(r.p1), y2 = candles.priceToCoordinate(r.p0);
+      if (y1 == null || y2 == null || !r.tot) continue;
+      const h = Math.max(1, Math.abs(y2 - y1) - 1), y = Math.min(y1, y2), inVa = r.mid >= vp.val && r.mid <= vp.vah;
+      const wu = (r.up / vp.max) * maxLen, wd = (r.down / vp.max) * maxLen;
+      ctx.fillStyle = rgba('#5AA9FF', inVa ? 0.34 : 0.16); ctx.fillRect(0, y, wu, h);
+      ctx.fillStyle = rgba('#F5B841', inVa ? 0.3 : 0.14); ctx.fillRect(wu, y, wd, h);
+    }
+    const y = candles.priceToCoordinate(vp.poc);
+    if (y != null) {
+      ctx.strokeStyle = 'rgba(230,234,242,0.75)'; ctx.lineWidth = 1; ctx.setLineDash([6, 4]);
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(paneW, y); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(230,234,242,0.9)'; ctx.textAlign = 'left';
+      ctx.fillText(`POC ${fmtPrice(vp.poc)}`, maxLen + 6, y - 3);
+    }
+    ctx.restore();
+  }
+
   function drawSessions(paneW, paneH) {
     if (!state.show.sessions || !['1m', '5m', '15m', '1h'].includes(state.dataInterval || state.interval)) return;
     const r = chart.timeScale().getVisibleLogicalRange();
@@ -2382,6 +2467,133 @@
     afterSuggest(`Objetivo según Kronos: cierre esperado de ${fmtPrice(c.target)} en ${k.res.times.length} velas.`);
   });
   kCheck();
+
+  // ---------- estrategias ----------
+  // La estrategia elegida prepara el gráfico con sus indicadores y lee 1H, 4H y Diario.
+  const ST_SHOW = { tradingLatino: ['ema10', 'ema55', 'sqz', 'adx', 'vpvr'] };
+  const st = { pick: store.get('strategy', ''), res: null, timer: null, seq: 0, err: null };
+  const stInd = { ema, squeeze, adx, atr, vpvr, monColor, fmt: fmtPrice };
+  const TF_NAME = { '1h': '1H', '4h': '4H', '1d': 'Diario' };
+  const projClass = (d) => (d === 'up' || d === 'range-up' ? 'up' : d === 'down' || d === 'range-down' ? 'down' : 'flat');
+  const esc = (t) => String(t).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
+  function stPick(name) {
+    const before = st.pick;
+    st.pick = name; store.set('strategy', name);
+    // al elegir una estrategia se encienden sus indicadores; al quitarla se apagan los que encendió
+    const on = ST_SHOW[name] || [], off = (ST_SHOW[before] || []).filter((k) => !on.includes(k));
+    const turnedOn = store.get('strategyTurnedOn', []);
+    off.forEach((k) => { if (turnedOn.includes(k)) state.show[k] = false; });
+    const now = on.filter((k) => !state.show[k]);
+    now.forEach((k) => { state.show[k] = true; });
+    store.set('strategyTurnedOn', name ? turnedOn.filter((k) => on.includes(k)).concat(now) : []);
+    store.set('show', state.show);
+    $$('[data-show]').forEach((cb) => { cb.checked = !!state.show[cb.dataset.show]; });
+    applyVisibility();
+    st.res = null; st.err = null;
+    stRender();
+    stRun();
+  }
+
+  async function stRun() {
+    clearTimeout(st.timer);
+    const S = window.TPStrategies && window.TPStrategies[st.pick];
+    if (!S) return;
+    st.timer = setTimeout(stRun, 60000);
+    if (document.hidden && st.res) return;
+    const seq = ++st.seq;
+    $('#st-state').textContent = 'leyendo…'; $('#st-state').className = 'k-state';
+    try {
+      const data = await Promise.all(S.intervals.map((iv) => fetchData(iv)));
+      if (seq !== st.seq) return;
+      const byTf = {};
+      S.intervals.forEach((iv, i) => { byTf[iv] = data[i].candles; });
+      st.res = S.analyze(byTf, stInd); st.err = null; st.at = Date.now();
+    } catch (e) {
+      if (seq !== st.seq) return;
+      st.err = e.message;
+    }
+    stRender();
+  }
+  let stSoon;
+  const stRunSoon = () => { clearTimeout(stSoon); if (st.pick) stSoon = setTimeout(stRun, 1200); };
+
+  function stTfHtml(r, main) {
+    if (!r) return '';
+    const notes = r.notes.map((x) => `<li class="${x.kind}">${esc(x.text)}</li>`).join('');
+    return `<div class="st-tf${main ? ' main' : ''}">
+        <div class="st-tf-head"><b>${TF_NAME[r.tf]}</b><span class="muted">${r.horizon}</span></div>
+        <p class="st-proj ${projClass(r.projDir)}">${esc(r.projection)}</p>
+        <dl>
+          <dt>EMAs</dt><dd>${esc(r.emaTxt)}<span class="zone mono">EMA 10 ${fmtPrice(r.e10)} · EMA 55 ${fmtPrice(r.e55)}</span></dd>
+          <dt>Monitor</dt><dd><i class="sw" style="background:${MON[r.mon].color}"></i>${esc(r.monTxt)}</dd>
+          <dt>ADX</dt><dd>${esc(r.adxTxt)}</dd>
+          <dt>Volumen</dt><dd>${esc(r.volTxt)}</dd>
+        </dl>
+        ${notes ? `<ul class="st-notes">${notes}</ul>` : ''}
+      </div>`;
+  }
+  const checks = (list) => `<ul class="st-checks">${list.map((c) => `<li class="${c.ok ? 'ok' : 'no'}">${c.ok ? '✓' : '✗'} ${esc(c.text)}</li>`).join('')}</ul>`;
+
+  function stPlanHtml(p, r4) {
+    if (!p) return '';
+    if (!p.side) {
+      return `<div class="st-plan"><h3>Plan operativo · 4H</h3>
+        <p class="st-none">Sin entrada según la estrategia.</p>
+        <p class="muted">Para un ${p.want === 'long' ? 'largo' : 'corto'} a favor de la tendencia de 4H falta:</p>
+        ${checks(r4[p.want])}</div>`;
+    }
+    const L = p.side === 'long';
+    return `<div class="st-plan"><h3>Plan operativo · 4H</h3>
+      <p class="st-proj ${L ? 'up' : 'down'}">${L ? 'Entrada en largo ▲' : 'Entrada en corto ▼'}${p.counter ? ' · contra la tendencia diaria' : ''}</p>
+      <dl>
+        <dt>Entrada</dt><dd><span class="mono">${fmtPrice(p.entry)}</span><span class="zone">${esc(p.zone)}</span></dd>
+        <dt>Stop</dt><dd><span class="mono">${fmtPrice(p.stop)}</span><span class="zone">${esc(p.stopWhy)}</span></dd>
+        <dt>Objetivo</dt><dd><span class="mono">${p.target == null ? '—' : fmtPrice(p.target)}</span><span class="zone">${esc(p.targetWhy)}, ${esc(p.exit)}</span></dd>
+      </dl>
+      ${p.wide ? '<ul class="st-notes"><li class="warn">Stop muy amplio (más de 3 velas medias): probablemente se entra tarde, lejos de la zona.</li></ul>' : ''}
+      ${p.trigger ? checks([p.trigger]) : ''}
+      ${checks(r4[p.side])}
+      <button type="button" class="k-btn st-btn" id="st-to-calc">Llevar a la calculadora</button></div>`;
+  }
+
+  function stRender() {
+    const out = $('#st-out'), S = window.TPStrategies && window.TPStrategies[st.pick];
+    $('#st-pick').value = st.pick;
+    $('#st-note').hidden = !S;
+    if (!S) { out.innerHTML = ''; $('#st-state').textContent = ''; return; }
+    const stEl = $('#st-state');
+    if (st.err && !st.res) {
+      out.innerHTML = `<p class="k-err">No se pudo leer: ${esc(st.err)}</p>`;
+      stEl.textContent = 'error'; stEl.className = 'k-state err';
+      return;
+    }
+    if (!st.res) { out.innerHTML = '<p class="muted">Leyendo 1H, 4H y Diario…</p>'; return; }
+    const { reads, plan, global } = st.res;
+    if (!reads['4h']) { out.innerHTML = '<p class="muted">No hay suficientes velas de 4H.</p>'; return; }
+    stEl.textContent = st.err ? 'sin actualizar' : 'al día ' + fmtShort(Math.floor(st.at / 1000)).split(' ').pop();
+    stEl.className = 'k-state ' + (st.err ? 'err' : 'ok');
+    const g = global.map((x) => `<li class="${x.kind}">${esc(x.text)}</li>`).join('');
+    out.innerHTML = `${stTfHtml(reads['4h'], true)}${stTfHtml(reads['1d'])}
+      ${g ? `<ul class="st-notes">${g}</ul>` : ''}
+      ${stPlanHtml(plan, reads['4h'])}
+      <details class="st-more"><summary>Lectura de 1H (para afinar la entrada)</summary>${stTfHtml(reads['1h'])}</details>`;
+  }
+
+  $('#st-pick').addEventListener('change', (e) => stPick(e.target.value));
+  $('#st-out').addEventListener('click', (e) => {
+    if (!e.target.closest('#st-to-calc') || !st.res || !st.res.plan || !st.res.plan.side) return;
+    const p = st.res.plan, c = state.calc;
+    c.side = p.side; c.entry = Math.round(p.entry * 100) / 100;
+    c.stop = Math.round(p.stop * 100) / 100;
+    c.target = p.target == null ? null : Math.round(p.target * 100) / 100;
+    c.t0 = null;
+    afterSuggest(`Plan de TradingLatino en 4H: stop ${p.stopWhy}; objetivo en ${p.targetWhy}.`);
+    $('#calc-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && st.pick) stRunSoon(); });
+  stRender();
+  if (st.pick) stRun();
 
   // ---------- controles ----------
   $$('#tfs button').forEach((b) => b.addEventListener('click', () => {
