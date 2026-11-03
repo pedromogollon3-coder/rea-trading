@@ -32,7 +32,7 @@ import kronos_ia
 HOST, PORT = "127.0.0.1", 8050
 WEB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web")
 SYMBOL = "BTCUSDT"
-VERSION = "3.0 (31 oct 2026)"  # se muestra en la app; súbela en cada entrega
+VERSION = "3.1 (3 nov 2026)"  # se muestra en la app; súbela en cada entrega
 INTERVALS = {"1m", "5m", "15m", "1h", "4h", "1d"}
 # data-api.binance.vision es el servidor de datos públicos de Binance; api.binance.com
 # queda como respaldo (desde algunas ubicaciones responde 451).

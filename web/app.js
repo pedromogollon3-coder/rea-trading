@@ -18,7 +18,7 @@
   };
 
   const DEFAULT_SHOW = {
-    ema20: true, ema50: true, sma200: false, ema600: true, bb: false, vol: true, rsi: true, macd: false,
+    ema20: true, ema50: true, sma200: false, ema600: true, bb: false, vol: true, rsi: true, macd: false, sqz: false, adx: false,
     ob: true, fvg: true, structure: true, swings: true, liquidity: false, autoFib: false, activeOnly: true,
     walls: true, levels: true, sessions: true,
   };
@@ -132,7 +132,24 @@
   const macdLine = macdChart.addLineSeries(line('#5AA9FF', 2));
   const macdSignal = macdChart.addLineSeries(line('#F5B841', 1));
 
-  const allCharts = [chart, rsiChart, macdChart];
+  // Squeeze Momentum (LazyBear): histograma de momento y puntos de compresión sobre el cero
+  const sqzEl = $('#chart-sqz');
+  const sqzChart = LWC.createChart(sqzEl, chartOptions(false));
+  const sqzHist = sqzChart.addHistogramSeries({ priceLineVisible: false, lastValueVisible: false });
+  const sqzDots = sqzChart.addLineSeries(line('#8D97AB', 2, {
+    lineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2, autoscaleInfoProvider: () => null,
+  }));
+
+  const adxEl = $('#chart-adx');
+  const adxChart = LWC.createChart(adxEl, chartOptions(false));
+  const pdiS = adxChart.addLineSeries(line(C.bull, 1));
+  const mdiS = adxChart.addLineSeries(line(C.bear, 1));
+  const adxS = adxChart.addLineSeries(line('#F5B841', 2, {
+    lastValueVisible: true, priceFormat: { type: 'price', precision: 1, minMove: 0.1 },
+  }));
+  adxS.createPriceLine({ price: 25, color: 'rgba(174,183,200,0.45)', lineWidth: 1, lineStyle: LWC.LineStyle.Dashed, axisLabelVisible: false });
+
+  const allCharts = [chart, rsiChart, macdChart, sqzChart, adxChart];
   let syncing = false;
   allCharts.forEach((c) => c.timeScale().subscribeVisibleLogicalRangeChange((r) => {
     if (syncing || !r) return;
@@ -189,11 +206,60 @@
     const h = m.map((x, i) => (x != null && s[i] != null ? x - s[i] : null));
     return { m, s, h };
   }
+  // Media móvil de Wilder (ta.rma de TradingView): arranca con la media simple de los primeros p.
+  function rma(v, p) {
+    const out = new Array(v.length).fill(null);
+    const first = v.findIndex((x) => x != null);
+    if (first < 0 || v.length - first < p) return out;
+    let prev = 0;
+    for (let i = first; i < first + p; i++) prev += v[i];
+    prev /= p; out[first + p - 1] = prev;
+    for (let i = first + p; i < v.length; i++) { prev = (prev * (p - 1) + v[i]) / p; out[i] = prev; }
+    return out;
+  }
+  const trueRange = (cs) => cs.map((c, i) => (i === 0 ? c.high - c.low
+    : Math.max(c.high - c.low, Math.abs(c.high - cs[i - 1].close), Math.abs(c.low - cs[i - 1].close))));
+  // ADX con +DI y −DI (Wilder).
+  function adx(cs, p = 14) {
+    const n = cs.length, up = new Array(n).fill(null), dn = new Array(n).fill(null);
+    for (let i = 1; i < n; i++) {
+      const u = cs[i].high - cs[i - 1].high, d = cs[i - 1].low - cs[i].low;
+      up[i] = u > d && u > 0 ? u : 0; dn[i] = d > u && d > 0 ? d : 0;
+    }
+    const tr = trueRange(cs); tr[0] = null;
+    const atr = rma(tr, p), sUp = rma(up, p), sDn = rma(dn, p);
+    const pdi = atr.map((a, i) => (a ? 100 * sUp[i] / a : null));
+    const mdi = atr.map((a, i) => (a ? 100 * sDn[i] / a : null));
+    const dx = pdi.map((x, i) => (x == null ? null : x + mdi[i] === 0 ? 0 : 100 * Math.abs(x - mdi[i]) / (x + mdi[i])));
+    return { adx: rma(dx, p), pdi, mdi };
+  }
+  // Squeeze Momentum de LazyBear: Bollinger (20, 2) dentro del Keltner (20, 1,5) = compresión.
+  function squeeze(cs, p = 20, mBB = 2, mKC = 1.5) {
+    const close = cs.map((c) => c.close), bb = bollinger(close, p, mBB), rng = sma(trueRange(cs), p);
+    const val = new Array(cs.length).fill(null), st = new Array(cs.length).fill(null), d = [];
+    for (let i = 0; i < cs.length; i++) {
+      if (bb.mid[i] == null) { d.push(null); continue; }
+      let hi = -Infinity, lo = Infinity;
+      for (let j = i - p + 1; j <= i; j++) { hi = Math.max(hi, cs[j].high); lo = Math.min(lo, cs[j].low); }
+      d.push(close[i] - ((hi + lo) / 2 + bb.mid[i]) / 2);
+      const kUp = bb.mid[i] + rng[i] * mKC, kLo = bb.mid[i] - rng[i] * mKC;
+      st[i] = bb.lo[i] > kLo && bb.up[i] < kUp ? 'on' : bb.lo[i] < kLo && bb.up[i] > kUp ? 'off' : 'none';
+      if (i < 2 * p - 2) continue;
+      // regresión lineal de las últimas p diferencias, evaluada en la vela actual
+      let sx = 0, sy = 0, sxy = 0, sxx = 0;
+      for (let k = 0; k < p; k++) { const y = d[i - p + 1 + k]; sx += k; sy += y; sxy += k * y; sxx += k * k; }
+      const slope = (p * sxy - sx * sy) / (p * sxx - sx * sx);
+      val[i] = (sy - slope * sx) / p + slope * (p - 1);
+    }
+    return { val, st };
+  }
+  const SQZ_DOT = { on: '#FF7A45', off: '#8D97AB', none: '#5AA9FF' };
 
   function computeIndicators() {
     const cs = state.candles, close = cs.map((c) => c.close), times = cs.map((c) => c.time);
     const ser = (vals) => vals.map((v, i) => (v == null ? { time: times[i] } : { time: times[i], value: v }));
-    const bb = bollinger(close), md = macd(close);
+    const bb = bollinger(close), md = macd(close), sq = squeeze(cs), ad = adx(cs);
+    state.ind = { sq, ad };
     return {
       vol: cs.map((c) => ({ time: c.time, value: c.volume, color: c.close >= c.open ? 'rgba(46,204,143,0.35)' : 'rgba(240,80,110,0.35)' })),
       ema20: ser(ema(close, 20)), ema50: ser(ema(close, 50)), sma200: ser(sma(close, 200)),
@@ -203,23 +269,46 @@
       macd: ser(md.m), signal: ser(md.s),
       hist: md.h.map((v, i) => (v == null ? { time: times[i] }
         : { time: times[i], value: v, color: v >= 0 ? 'rgba(46,204,143,0.6)' : 'rgba(240,80,110,0.6)' })),
+      // verde/rojo intenso cuando el momento crece en su dirección, apagado cuando se debilita
+      sqzHist: sq.val.map((v, i) => {
+        if (v == null) return { time: times[i] };
+        const prev = sq.val[i - 1] ?? v;
+        const color = v >= 0 ? (v >= prev ? '#2ECC8F' : 'rgba(46,204,143,0.4)') : (v <= prev ? '#F0506E' : 'rgba(240,80,110,0.4)');
+        return { time: times[i], value: v, color };
+      }),
+      sqzDots: sq.st.map((s, i) => (s == null ? { time: times[i] } : { time: times[i], value: 0, color: SQZ_DOT[s] })),
+      adx: ser(ad.adx), pdi: ser(ad.pdi), mdi: ser(ad.mdi),
     };
   }
   const SERIES = {
     vol: volume, ema20, ema50, sma200, ema600, bbUp, bbMid, bbLo,
     rsi: rsiS, macd: macdLine, signal: macdSignal, hist: macdHist,
+    sqzHist, sqzDots, adx: adxS, pdi: pdiS, mdi: mdiS,
   };
+
+  // Lectura del último valor en la etiqueta de cada panel.
+  function updateSubLabels() {
+    const { sq, ad } = state.ind || {}; if (!sq) return;
+    const n = sq.val.length - 1, v = sq.val[n], st = sq.st[n];
+    const stTxt = { on: 'compresión activa', off: 'compresión liberada', none: 'sin compresión' }[st] || '';
+    const dirTxt = v == null ? '' : `momento ${v >= 0 ? 'alcista' : 'bajista'} ${Math.abs(v) >= Math.abs(sq.val[n - 1] ?? v) ? 'creciendo' : 'perdiendo fuerza'}`;
+    $('#sqz-read').textContent = [stTxt, dirTxt].filter(Boolean).join(' · ');
+    const a = ad.adx[n], pd = ad.pdi[n], md = ad.mdi[n];
+    $('#adx-read').textContent = a == null ? '' : `${a.toFixed(1).replace('.', ',')} · ${a >= 25 ? 'tendencia fuerte' : a >= 20 ? 'tendencia débil' : 'sin tendencia'} · ${pd >= md ? '+DI domina (alcista)' : '−DI domina (bajista)'}`;
+  }
 
   function setAllData() {
     candles.setData(state.candles.map(({ time, open, high, low, close }) => ({ time, open, high, low, close })));
     const ind = computeIndicators();
     for (const k in SERIES) SERIES[k].setData(ind[k]);
+    updateSubLabels();
   }
   function updateLast() {
     const ind = computeIndicators();
     const c = state.candles[state.candles.length - 1];
     candles.update({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close });
     for (const k in SERIES) SERIES[k].update(ind[k][ind[k].length - 1]);
+    updateSubLabels();
   }
 
   function applyVisibility() {
@@ -234,8 +323,10 @@
     [bbUp, bbMid, bbLo].forEach((x) => x.applyOptions({ visible: s.bb }));
     rsiEl.classList.toggle('hidden', !s.rsi);
     macdEl.classList.toggle('hidden', !s.macd);
+    sqzEl.classList.toggle('hidden', !s.sqz);
+    adxEl.classList.toggle('hidden', !s.adx);
     // la escala de tiempo solo se ve en el panel de más abajo
-    const bottom = s.macd ? macdChart : s.rsi ? rsiChart : chart;
+    const bottom = s.adx ? adxChart : s.sqz ? sqzChart : s.macd ? macdChart : s.rsi ? rsiChart : chart;
     allCharts.forEach((c) => c.timeScale().applyOptions({ visible: c === bottom }));
     updateMarkers();
   }
