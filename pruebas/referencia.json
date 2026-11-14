@@ -1,0 +1,194 @@
+{
+ "indicadores": {
+  "ema10": [
+   81501.226629,
+   81529.705423,
+   81458.733528,
+   81440.038341,
+   81411.044097
+  ],
+  "ema55": [
+   81755.397838,
+   81751.914344,
+   81730.037403,
+   81716.67571,
+   81701.100506
+  ],
+  "sma200": [
+   82582.9728,
+   82576.1037,
+   82568.6625,
+   82560.24105,
+   82552.2239
+  ],
+  "rsi": [
+   50.246282,
+   52.138787,
+   38.138661,
+   44.804691,
+   43.065953
+  ],
+  "macd": [
+   7.384091,
+   19.875561,
+   -5.703699,
+   -6.881876,
+   -11.316216
+  ],
+  "bollingerSup": [
+   81770.229998,
+   81779.624232,
+   81821.30111,
+   81824.275583,
+   81826.606232
+  ],
+  "atr": [
+   233.958135,
+   221.638268,
+   268.688392,
+   272.257078,
+   261.913716
+  ],
+  "adx": [
+   18.937688,
+   18.078887,
+   20.001883,
+   21.787521,
+   23.445614
+  ],
+  "masDI": [
+   18.511112,
+   18.144342,
+   13.898002,
+   12.736128,
+   12.293447
+  ],
+  "menosDI": [
+   21.261156,
+   20.839898,
+   36.640943,
+   33.577757,
+   32.410665
+  ],
+  "squeeze": [
+   47.023007,
+   69.301086,
+   6.3892,
+   -20.473729,
+   -52.853746
+  ],
+  "compresion": [
+   "on",
+   "on",
+   "off",
+   "off",
+   "off"
+  ],
+  "poc": 81649.25,
+  "areaValor": [
+   80843.166667,
+   83403.666667
+  ],
+  "nodos": [
+   81649.25,
+   82218.25,
+   82407.916667,
+   83451.083333,
+   83640.75
+  ]
+ },
+ "smc": {
+  "cuantos": {
+   "swings": 30,
+   "fvg": 102,
+   "estructura": 9,
+   "ob": 6,
+   "liquidez": 1
+  },
+  "ultimos": {
+   "swing": {
+    "time": 1792170000,
+    "dir": -1,
+    "level": 80809.25
+   },
+   "fvg": {
+    "time": 1792270800,
+    "dir": -1,
+    "top": 81597.5,
+    "bottom": 81458.01,
+    "mitigated": null
+   },
+   "estructura": {
+    "time": 1792119600,
+    "kind": "CHOCH",
+    "dir": -1,
+    "level": 81688,
+    "broken": 1792162800
+   },
+   "ob": {
+    "time": 1792148400,
+    "dir": -1,
+    "top": 82940.81,
+    "bottom": 82202.75,
+    "strength": 64.16,
+    "mitigated": null
+   },
+   "liquidez": {
+    "time": 1791878400,
+    "dir": 1,
+    "level": 84157.36,
+    "end": 1791964800,
+    "swept": null
+   }
+  }
+ },
+ "tradingLatino": {
+  "1h": {
+   "tendencia": "down",
+   "monitor": "ro",
+   "adx": 23.445614,
+   "adxSube": true,
+   "proyeccion": "Caída con fuerza (\"cuchillo cayendo\")",
+   "largo": [
+    false,
+    false,
+    false,
+    false
+   ],
+   "corto": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "notas": 2
+  },
+  "4h": {
+   "tendencia": "down",
+   "monitor": "ro",
+   "adx": 51.108431,
+   "adxSube": true,
+   "proyeccion": "Caída con fuerza (\"cuchillo cayendo\")",
+   "largo": [
+    false,
+    false,
+    false,
+    false
+   ],
+   "corto": [
+    true,
+    true,
+    false,
+    false
+   ],
+   "notas": 2
+  },
+  "plan": {
+   "lado": null,
+   "falta": [
+    "Monitor: valle verde que gira a verde oscuro (o nace el valle rojo)",
+    "ADX: la subida pierde fuerza o toma pendiente positiva con el valle rojo"
+   ]
+  }
+ }
+}
