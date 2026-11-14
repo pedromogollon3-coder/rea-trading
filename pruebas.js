@@ -37,7 +37,11 @@ function valoresActuales() {
   const ad = IND.adx(velas), sq = IND.squeeze(velas), md = IND.macd(close), bb = IND.bollinger(close), vp = IND.vpvr(velas.slice(-150), 48);
   const smc = SMC.computeSmc(velas, 10);
   const stInd = { ema: IND.ema, squeeze: IND.squeeze, adx: IND.adx, atr: IND.atr, vpvr: IND.vpvr, monColor: IND.monColor, fmt: (v) => v.toFixed(2) };
-  const tl = globalThis.TPStrategies.tradingLatino.analyze({ '1h': velas, '4h': EV.agrupar(velas, 14400) }, stInd);
+  const porTf = { '1h': velas, '4h': EV.agrupar(velas, 14400) };
+  const estrategia = (clave) => {
+    const r = globalThis.TPStrategies[clave].analyze(porTf, stInd);
+    return { '1h': lectura(r.reads['1h']), '4h': lectura(r.reads['4h']), plan: r.plan && { lado: r.plan.side, falta: r.plan.missing || null } };
+  };
   const lectura = (r) => r && {
     tendencia: r.trend, monitor: r.mon, adx: r6(r.adx), adxSube: r.adxUp, proyeccion: r.projection,
     largo: r.long.map((c) => c.ok), corto: r.short.map((c) => c.ok), notas: r.notes.length,
@@ -54,7 +58,8 @@ function valoresActuales() {
       cuantos: { swings: smc.swings.length, fvg: smc.fvg.length, estructura: smc.structure.length, ob: smc.ob.length, liquidez: smc.liquidity.length },
       ultimos: { swing: smc.swings.at(-1), fvg: smc.fvg.at(-1), estructura: smc.structure.at(-1), ob: smc.ob.at(-1), liquidez: smc.liquidity.at(-1) },
     },
-    tradingLatino: { '1h': lectura(tl.reads['1h']), '4h': lectura(tl.reads['4h']), plan: tl.plan && { lado: tl.plan.side, falta: tl.plan.missing || null } },
+    tradingLatino: estrategia('tradingLatino'),
+    pedro: estrategia('pedro'),
   };
 }
 

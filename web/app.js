@@ -2344,7 +2344,7 @@
 
   // ---------- estrategias ----------
   // La estrategia elegida prepara el gráfico con sus indicadores y lee 1H, 4H y Diario.
-  const ST_SHOW = { tradingLatino: ['ema10', 'ema55', 'sqz', 'adx', 'vpvr'] };
+  const ST_SHOW = { tradingLatino: ['ema10', 'ema55', 'sqz', 'adx', 'vpvr'], pedro: ['ema10', 'ema55', 'sqz', 'adx', 'vpvr'] };
   const st = { pick: store.get('strategy', ''), res: null, timer: null, seq: 0, err: null };
   const stInd = { ema, squeeze, adx, atr, vpvr, monColor, fmt: fmtPrice };
   const TF_NAME = { '1h': '1H', '4h': '4H', '1d': 'Diario' };
@@ -2431,6 +2431,16 @@
       <button type="button" class="k-btn st-btn" id="st-to-calc">Llevar a la calculadora</button></div>`;
   }
 
+  // Cómo le fue a la estrategia en el histórico, según evaluar.js (web/medicion.js).
+  function stMedHtml(key) {
+    const m = window.TPMedicion && window.TPMedicion[key];
+    if (!m || !m.operaciones) return '';
+    const n = (v) => (v > 0 ? '+' : '') + v.toFixed(2).replace('.', ',');
+    return `<p class="st-med muted" title="Medición mecánica con evaluar.js: 1 R es lo arriesgado en cada operación. Resultado pasado: no garantiza el futuro.">
+      Medición histórica · ${esc(m.simbolo)} · ${esc(m.desde)} a ${esc(m.hasta)}<br>
+      ${m.operaciones} operaciones · ${Math.round(m.aciertos)} % de aciertos · R medio ${n(m.rMedio)} (${n(m.rMedioMin)} a ${n(m.rMedioMax)})</p>`;
+  }
+
   function stRender() {
     const out = $('#st-out'), S = window.TPStrategies && window.TPStrategies[st.pick];
     $('#st-pick').value = st.pick;
@@ -2448,12 +2458,14 @@
     stEl.textContent = st.err ? 'sin actualizar' : 'al día ' + fmtShort(Math.floor(st.at / 1000)).split(' ').pop();
     stEl.className = 'k-state ' + (st.err ? 'err' : 'ok');
     const g = global.map((x) => `<li class="${x.kind}">${esc(x.text)}</li>`).join('');
-    out.innerHTML = `${stTfHtml(reads['4h'], true)}${stTfHtml(reads['1d'])}
+    out.innerHTML = `${stMedHtml(st.pick)}${stTfHtml(reads['4h'], true)}${stTfHtml(reads['1d'])}
       ${g ? `<ul class="st-notes">${g}</ul>` : ''}
       ${stPlanHtml(plan, reads['4h'])}
       <details class="st-more"><summary>Lectura de 1H (para afinar la entrada)</summary>${stTfHtml(reads['1h'])}</details>`;
   }
 
+  // el nombre de cada estrategia (con su versión) sale de su propio archivo
+  $$('#st-pick option').forEach((op) => { const S = window.TPStrategies && window.TPStrategies[op.value]; if (S) op.textContent = S.name; });
   $('#st-pick').addEventListener('change', (e) => stPick(e.target.value));
   $('#st-out').addEventListener('click', (e) => {
     if (!e.target.closest('#st-to-calc') || !st.res || !st.res.plan || !st.res.plan.side) return;
@@ -2462,7 +2474,7 @@
     c.stop = Math.round(p.stop * 100) / 100;
     c.target = p.target == null ? null : Math.round(p.target * 100) / 100;
     c.t0 = null;
-    afterSuggest(`Plan de TradingLatino en 4H: stop ${p.stopWhy}; objetivo en ${p.targetWhy}.`);
+    afterSuggest(`Plan de ${window.TPStrategies[st.pick].name} en 4H: stop ${p.stopWhy}; objetivo en ${p.targetWhy}.`);
     $('#calc-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && st.pick) stRunSoon(); });

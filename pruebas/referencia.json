@@ -190,5 +190,54 @@
     "ADX: la subida pierde fuerza o toma pendiente positiva con el valle rojo"
    ]
   }
+ },
+ "pedro": {
+  "1h": {
+   "tendencia": "down",
+   "monitor": "ro",
+   "adx": 23.445614,
+   "adxSube": true,
+   "proyeccion": "Caída con fuerza (\"cuchillo cayendo\")",
+   "largo": [
+    false,
+    false,
+    false,
+    false
+   ],
+   "corto": [
+    true,
+    true,
+    true,
+    true
+   ],
+   "notas": 2
+  },
+  "4h": {
+   "tendencia": "down",
+   "monitor": "ro",
+   "adx": 51.108431,
+   "adxSube": true,
+   "proyeccion": "Caída con fuerza (\"cuchillo cayendo\")",
+   "largo": [
+    false,
+    false,
+    false,
+    false
+   ],
+   "corto": [
+    true,
+    true,
+    false,
+    false
+   ],
+   "notas": 2
+  },
+  "plan": {
+   "lado": null,
+   "falta": [
+    "Monitor: valle verde que gira a verde oscuro (o nace el valle rojo)",
+    "ADX: la subida pierde fuerza o toma pendiente positiva con el valle rojo"
+   ]
+  }
  }
 }

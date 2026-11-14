@@ -380,6 +380,7 @@ button.link:hover { color: var(--bear); }
 .st-out:empty { display: none; }
 .st-out { margin-top: 10px; font-size: 12px; }
 .st-out .k-err { color: var(--bear); margin: 0; }
+.st-med { margin: 0 0 10px; font-size: 11px; line-height: 1.5; }
 .st-tf { border-top: 1px solid var(--line); padding: 8px 0; }
 .st-tf:first-child { border-top: 0; padding-top: 0; }
 .st-tf-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 11px; }

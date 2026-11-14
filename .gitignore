@@ -4,3 +4,5 @@
 venv/
 .env
 *.log
+# corridas sueltas del evaluador (la base y la bitacora si se guardan)
+evaluaciones/2*.json

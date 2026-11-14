@@ -1,14 +1,18 @@
 /* Evaluador de Trading Pedro: mide con datos históricos cómo le habría ido a la estrategia.
  *
- * Usa el MISMO código que la app (web/indicadores.js, web/tradinglatino.js, web/calc.js),
- * así que lo que mide es exactamente lo que se ve en pantalla.
+ * Usa el MISMO código que la app (web/indicadores.js, web/calc.js y las estrategias
+ * web/tradinglatino.js y web/estrategia_pedro.js), así que mide lo que se ve en pantalla.
+ * Evalúa todas las estrategias en BTC, ETH y SOL: más monedas dan más operaciones, y con
+ * más operaciones cuesta menos distinguir una mejora real de la casualidad.
  *
  * Uso:
  *   node evaluar.js --descargar          baja (o actualiza) las velas de 1H a datos/
  *   node evaluar.js                      evalúa el tramo de desarrollo y guarda el resultado
  *   node evaluar.js --fijar-base         además deja este resultado como base de comparación
  *   node evaluar.js --reserva            muestra también el tramo de reserva (ver abajo)
- * Opciones: --simbolo BTCUSDT  --dias 1095  --comision 0  --max-dias 30  --operaciones
+ * Opciones: --simbolo BTCUSDT,ETHUSDT   --estrategia pedro   --dias 1095  --comision 0
+ *           --max-dias 30  --operaciones
+ *           --sin-salida-monitor   (mide solo con stop y objetivo, como antes)
  *
  * Cómo se evalúa, sin ver el futuro:
  *   - Cada vez que cierra una vela de 4H se le pasan a la estrategia las velas de 1H, 4H y
@@ -16,6 +20,9 @@
  *   - Si el plan da entrada con stop y objetivo, se abre una operación al cierre de esa vela
  *     y se sigue vela a vela de 1H hasta tocar el stop o el objetivo. Si una vela toca los
  *     dos, cuenta el stop (criterio prudente, el mismo de la práctica de la app).
+ *   - Salida por monitor, como dice el plan ("o cuando el monitor de 4H gire a verde oscuro"
+ *     en largos, "a rojo claro" en cortos): si al cerrar una vela de 4H el monitor acaba de
+ *     girar a ese color, la operación se cierra al precio de cierre de esa vela.
  *   - Una operación a la vez. Si pasa --max-dias sin resolverse, se cierra al precio de cierre.
  *   - El resultado se mide en R: 1 R = lo que se arriesga en la operación. +2 R es ganar el
  *     doble de lo arriesgado; −1 R es perder el stop.
@@ -34,7 +41,9 @@ globalThis.window = globalThis; // tradinglatino.js se registra en window
 const IND = require('./web/indicadores.js');
 const CALC = require('./web/calc.js');
 require('./web/tradinglatino.js');
-const ESTRATEGIA = globalThis.TPStrategies.tradingLatino;
+require('./web/estrategia_pedro.js');
+const ESTRATEGIAS = globalThis.TPStrategies; // { tradingLatino, pedro }
+const SIMBOLOS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT'];
 
 const ROOT = __dirname;
 const HOSTS = ['https://data-api.binance.vision', 'https://api.binance.com'];
@@ -47,7 +56,7 @@ const RESERVA = 0.25;
 
 // ---------- opciones ----------
 function opciones(argv) {
-  const o = { simbolo: 'BTCUSDT', dias: 1095, comision: 0, maxDias: 30 };
+  const o = { simbolos: SIMBOLOS, estrategias: Object.keys(ESTRATEGIAS), dias: 1095, comision: 0, maxDias: 30 };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const num = () => { const v = Number(argv[++i]); if (!isFinite(v)) throw new Error(`Falta un número después de ${a}`); return v; };
@@ -56,13 +65,17 @@ function opciones(argv) {
     else if (a === '--fijar-base') o.fijarBase = true;
     else if (a === '--operaciones') o.operaciones = true;
     else if (a === '--no-guardar') o.noGuardar = true;
-    else if (a === '--simbolo') o.simbolo = String(argv[++i] || '').toUpperCase();
+    else if (a === '--simbolo') { o.simbolos = String(argv[++i] || '').toUpperCase().split(','); o.parcial = true; }
+    else if (a === '--estrategia') { o.estrategias = [String(argv[++i] || '')]; o.parcial = true; }
     else if (a === '--dias') o.dias = num();
     else if (a === '--comision') o.comision = num();
     else if (a === '--max-dias') o.maxDias = num();
+    else if (a === '--sin-salida-monitor') o.sinSalidaMonitor = true;
     else throw new Error(`Opción desconocida: ${a}`);
   }
-  if (!/^[A-Z0-9]{5,20}$/.test(o.simbolo)) throw new Error('Símbolo no válido');
+  for (const sim of o.simbolos) if (!/^[A-Z0-9]{5,20}$/.test(sim)) throw new Error('Símbolo no válido: ' + sim);
+  for (const e of o.estrategias) if (!ESTRATEGIAS[e]) throw new Error(`Estrategia desconocida: ${e}. Hay: ${Object.keys(ESTRATEGIAS).join(', ')}`);
+  if (o.parcial && o.fijarBase) throw new Error('La base se fija con todas las monedas y estrategias: quita --simbolo y --estrategia.');
   return o;
 }
 
@@ -100,24 +113,24 @@ async function pedir(ruta) {
   throw new Error(`No se pudo descargar de Binance: ${ultimo && ultimo.message}`);
 }
 
-async function descargar(o) {
+async function descargar(o, simbolo) {
   // Hasta el último día completo (UTC), para que las velas de 4H y Diario salgan enteras.
   const fin = Math.floor(Date.now() / 1000 / D1) * D1;
-  const inicio = fin - o.dias * D1, previas = leerDatos(o.simbolo);
+  const inicio = fin - o.dias * D1, previas = leerDatos(simbolo);
   // si lo guardado ya cubre el inicio, solo se añaden las velas nuevas; si no, se baja todo
   const velas = previas.length && previas[0].time <= inicio ? previas : [];
   let desde = velas.length ? velas[velas.length - 1].time + H1 : inicio;
-  process.stdout.write(`Descargando ${o.simbolo} 1H desde ${fecha(desde)} hasta ${fecha(fin)} `);
+  process.stdout.write(`Descargando ${simbolo} 1H desde ${fecha(desde)} hasta ${fecha(fin)} `);
   while (desde < fin) {
-    const raw = await pedir(`/api/v3/klines?symbol=${o.simbolo}&interval=1h&startTime=${desde * 1000}&endTime=${fin * 1000 - 1}&limit=1000`);
+    const raw = await pedir(`/api/v3/klines?symbol=${simbolo}&interval=1h&startTime=${desde * 1000}&endTime=${fin * 1000 - 1}&limit=1000`);
     if (!raw.length) break;
     for (const k of raw) velas.push({ time: k[0] / 1000, open: +k[1], high: +k[2], low: +k[3], close: +k[4], volume: +k[5] });
     desde = velas[velas.length - 1].time + H1;
     process.stdout.write('.');
     await new Promise((ok) => setTimeout(ok, 250));
   }
-  guardarDatos(o.simbolo, velas);
-  console.log(`\n${velas.length} velas guardadas en ${path.relative(ROOT, archivoDatos(o.simbolo))}`);
+  guardarDatos(simbolo, velas);
+  console.log(`\n${velas.length} velas guardadas en ${path.relative(ROOT, archivoDatos(simbolo))}`);
 }
 
 // ---------- velas de 4H y Diario a partir de las de 1H ----------
@@ -138,9 +151,15 @@ const fmt = (v) => v.toFixed(2);
 const fecha = (t) => new Date(t * 1000).toISOString().slice(0, 16).replace('T', ' ');
 const stInd = { ema: IND.ema, squeeze: IND.squeeze, adx: IND.adx, atr: IND.atr, vpvr: IND.vpvr, monColor: IND.monColor, fmt };
 
-function simular(v1, o) {
+function simular(v1, o, estrategia = ESTRATEGIAS.pedro) {
   const v4 = agrupar(v1, H4), vd = agrupar(v1, D1);
   const maxVelas = Math.round(o.maxDias * 24);
+  // color del monitor de 4H en cada vela, y a qué vela de 4H pertenece cada vela de 1H
+  const sq4 = IND.squeeze(v4).val;
+  const mon4 = sq4.map((v, i) => (v == null || sq4[i - 1] == null ? null : IND.monColor(v, sq4[i - 1])));
+  const en4 = new Int32Array(v1.length);
+  v4.forEach((c, i) => { for (let j = c.primera; j <= c.ultima; j++) en4[j] = i; });
+  const cierre = (t, x) => (t.side === 'short' ? -1 : 1) * (x - t.entry) * t.size - (o.comision / 100) * t.size * (t.entry + x);
   const ops = [];
   const cuenta = { lecturas: 0, senales: 0, sinObjetivo: 0, planInvalido: 0, abierta: 0 };
   let libreDesde = 0; // índice de 1H a partir del cual se puede volver a entrar
@@ -156,7 +175,7 @@ function simular(v1, o) {
       '4h': v4.slice(Math.max(0, k + 1 - VENTANA), k + 1),
       '1d': vd.slice(Math.max(0, d - VENTANA + 1), d).concat(hoy),
     };
-    const res = ESTRATEGIA.analyze(porTf, stInd);
+    const res = estrategia.analyze(porTf, stInd);
     cuenta.lecturas++;
     const p = res.plan;
     if (!p || !p.side) continue;
@@ -169,10 +188,12 @@ function simular(v1, o) {
     for (let j = h + 1; j < v1.length && j <= h + maxVelas; j++) {
       const s = CALC.settle(t, v1[j], o.comision);
       if (s) { fin = { salida: s.result === 'target' ? 'objetivo' : 'stop', r: s.r, j }; break; }
-      if (j === h + maxVelas) {
-        const dir = p.side === 'short' ? -1 : 1, x = v1[j].close;
-        fin = { salida: 'tiempo', r: dir * (x - t.entry) * t.size - (o.comision / 100) * t.size * (t.entry + x), j };
+      const q = en4[j];
+      if (!o.sinSalidaMonitor && v4[q].ultima === j) { // cierra una vela de 4H: ¿giró el monitor?
+        const giro = p.side === 'long' ? 'vo' : 'rc';
+        if (mon4[q] === giro && mon4[q - 1] !== giro) { fin = { salida: 'monitor', r: cierre(t, v1[j].close), j }; break; }
       }
+      if (j === h + maxVelas) fin = { salida: 'tiempo', r: cierre(t, v1[j].close), j };
     }
     if (!fin) { cuenta.abierta++; break; } // se acabaron los datos con la operación abierta
     ops.push({
@@ -214,7 +235,7 @@ function medir(ops) {
     peorRacha,
     rrPlan: r2(ops.reduce((a, x) => a + x.rrPlan, 0) / n),
     horas: Math.round(ops.reduce((a, x) => a + x.horas, 0) / n),
-    salidas: { objetivo: ops.filter((x) => x.salida === 'objetivo').length, stop: ops.filter((x) => x.salida === 'stop').length, tiempo: ops.filter((x) => x.salida === 'tiempo').length },
+    salidas: { objetivo: ops.filter((x) => x.salida === 'objetivo').length, stop: ops.filter((x) => x.salida === 'stop').length, tiempo: ops.filter((x) => x.salida === 'tiempo').length, monitor: ops.filter((x) => x.salida === 'monitor').length },
   };
 }
 
@@ -225,9 +246,10 @@ const GRUPOS = [
   ['Stop normal', (x) => !x.stopAmplio], ['Stop amplio', (x) => x.stopAmplio],
 ];
 
-function resumen(ops) {
+function resumen(ops, simbolos) {
   const grupos = {};
   for (const [nombre, f] of GRUPOS) grupos[nombre] = medir(ops.filter(f));
+  if (simbolos.length > 1) for (const sim of simbolos) grupos[sim] = medir(ops.filter((x) => x.simbolo === sim));
   return { total: medir(ops), grupos };
 }
 
@@ -246,19 +268,22 @@ function imprimir(titulo, r, rango) {
   console.log(`\n${titulo}  ·  ${fecha(rango[0]).slice(0, 10)} a ${fecha(rango[1]).slice(0, 10)}`);
   console.log(`  ${''.padEnd(20)}${'Oper.'.padStart(5)}${'Aciertos'.padStart(9)}${'R medio'.padStart(9)}  ${'(margen 95 %)'.padEnd(18)}${'R total'.padStart(8)}${'Factor'.padStart(8)}${'Caída'.padStart(8)}${'Racha'.padStart(7)}`);
   console.log(fila('TOTAL', r.total));
-  for (const [nombre] of GRUPOS) console.log(fila(nombre, r.grupos[nombre]));
+  for (const nombre of Object.keys(r.grupos)) console.log(fila(nombre, r.grupos[nombre]));
   const t = r.total;
   if (t.operaciones) {
-    console.log(`  Salidas: ${t.salidas.objetivo} en objetivo, ${t.salidas.stop} en stop, ${t.salidas.tiempo} por tiempo  ·  R:B medio del plan ${num(t.rrPlan)}  ·  duración media ${t.horas} h`);
+    console.log(`  Salidas: ${t.salidas.objetivo} en objetivo, ${t.salidas.stop} en stop, ${t.salidas.monitor || 0} por giro del monitor, ${t.salidas.tiempo} por tiempo  ·  R:B medio del plan ${num(t.rrPlan)}  ·  duración media ${t.horas} h`);
   }
 }
 
-function comparar(base, ahora) {
-  const a = base.desarrollo.total, b = ahora.desarrollo.total;
+function comparar(base, ahora, clave) {
+  const eb = base.estrategias && base.estrategias[clave], ea = ahora.estrategias[clave];
+  if (!eb) { console.log(`\nSin base para ${ea.nombre}: fíjala con --fijar-base.`); return; }
+  const a = eb.desarrollo.total, b = ea.desarrollo.total;
   if (!a.operaciones || !b.operaciones) return;
-  console.log(`\nComparación con la base (${base.version}, ${base.commit}) — tramo de desarrollo`);
-  if (base.datos.desde !== ahora.datos.desde || base.datos.hasta !== ahora.datos.hasta || base.comision !== ahora.comision) {
-    console.log('  Ojo: la base se midió con otros datos u otra comisión; la comparación no es justa. Vuelve a fijar la base con --fijar-base.');
+  console.log(`\nComparación con la base (${base.version}, ${base.commit}) — ${ea.nombre}, tramo de desarrollo`);
+  const igual = (k) => JSON.stringify(base[k]) === JSON.stringify(ahora[k]);
+  if (!['datos', 'comision', 'maxDias', 'salidaMonitor'].every(igual)) {
+    console.log('  Ojo: la base se midió con otros datos u otras opciones; la comparación no es justa. Vuelve a fijar la base con --fijar-base.');
   }
   const lin = (n, x, y, d = 2) => console.log(`  ${n.padEnd(22)}${num(x, d).padStart(9)} → ${num(y, d).padStart(9)}   ${signo(y - x, d)}`);
   lin('Operaciones', a.operaciones, b.operaciones, 0);
@@ -266,59 +291,95 @@ function comparar(base, ahora) {
   lin('R medio', a.rMedio, b.rMedio);
   lin('R total', a.rTotal, b.rTotal, 1);
   lin('Peor caída (R)', a.peorCaida, b.peorCaida, 1);
+  if (a.operaciones === b.operaciones && a.rTotal === b.rTotal) { console.log('  Sin cambios respecto a la base.'); return; }
   // ¿la diferencia supera el ruido? Los márgenes del 95 % no deben solaparse.
   if (a.rMedioMin != null && b.rMedioMin != null) {
     const clara = b.rMedioMin > a.rMedioMax || b.rMedioMax < a.rMedioMin;
     console.log(clara
-      ? `  La diferencia en R medio es clara: los márgenes no se solapan.`
-      : `  Ojo: los márgenes de R medio se solapan; la diferencia puede ser casualidad.`);
+      ? '  La diferencia en R medio es clara: los márgenes no se solapan.'
+      : '  Ojo: los márgenes de R medio se solapan; la diferencia puede ser casualidad.');
   }
 }
 
 function git(cmd) { try { return execSync(`git ${cmd}`, { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim(); } catch { return ''; } }
 
+// Resumen para la app: lo que muestra el panel de estrategias (web/medicion.js).
+function guardarMedicion(out) {
+  const mes = (t) => new Date(t.slice(0, 10) + 'T00:00:00Z').toLocaleDateString('es', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+  const med = {};
+  for (const [clave, e] of Object.entries(out.estrategias)) {
+    const t = e.desarrollo.total;
+    med[clave] = {
+      simbolo: out.simbolos.map((x) => x.replace(/USDT$/, '')).join(', '), desde: mes(e.desarrollo.desde), hasta: mes(e.desarrollo.hasta),
+      operaciones: t.operaciones, aciertos: t.aciertos, rMedio: t.rMedio, rMedioMin: t.rMedioMin, rMedioMax: t.rMedioMax,
+    };
+  }
+  fs.writeFileSync(path.join(ROOT, 'web', 'medicion.js'),
+    '/* Generado por "node evaluar.js --fijar-base". No editar a mano. */\nwindow.TPMedicion = ' + JSON.stringify(med, null, 1) + ';\n');
+}
+
 async function main() {
   const o = opciones(process.argv.slice(2));
-  if (o.descargar) { await descargar(o); return; }
-  const v1 = leerDatos(o.simbolo);
-  if (!v1.length) throw new Error(`No hay datos de ${o.simbolo}. Ejecuta primero:  node evaluar.js --descargar`);
-  if (v1.length < (MIN_DIARIAS + 60) * 24) throw new Error('Hay muy pocos datos para evaluar. Descarga más días con --descargar --dias 1095');
+  if (o.descargar) { for (const sim of o.simbolos) await descargar(o, sim); return; }
+  const datos = {}, info = {};
+  for (const sim of o.simbolos) {
+    const v1 = leerDatos(sim);
+    if (!v1.length) throw new Error(`No hay datos de ${sim}. Ejecuta primero:  node evaluar.js --descargar`);
+    if (v1.length < (MIN_DIARIAS + 60) * 24) throw new Error(`Hay muy pocos datos de ${sim}. Descarga más días con --descargar --dias 1095`);
+    datos[sim] = v1;
+    info[sim] = { desde: fecha(v1[0].time), hasta: fecha(v1[v1.length - 1].time + H1), velas: v1.length };
+  }
+  const rangos = new Set(Object.values(info).map((d) => d.desde + d.hasta));
+  if (rangos.size > 1) throw new Error('Las monedas no cubren las mismas fechas. Ejecuta:  node evaluar.js --descargar');
 
-  const sim = simular(v1, o);
-  const dev = sim.ops.filter((x) => x.entrada < sim.corte), res = sim.ops.filter((x) => x.entrada >= sim.corte);
   const version = (/^VERSION = "([^"]+)"/m.exec(fs.readFileSync(path.join(ROOT, 'trading_pedro.py'), 'utf8')) || [])[1] || '?';
-  const commit = git('rev-parse --short HEAD') + (git('status --porcelain -- web') ? ' + cambios sin guardar' : '');
-  const out = {
-    version, commit, estrategia: ESTRATEGIA.name, simbolo: o.simbolo, comision: o.comision, maxDias: o.maxDias,
-    datos: { desde: fecha(v1[0].time), hasta: fecha(v1[v1.length - 1].time + H1), velas: v1.length },
-    cuenta: sim.cuenta,
-    desarrollo: { desde: fecha(sim.desde), hasta: fecha(sim.corte), ...resumen(dev) },
-  };
+  const commit = git('rev-parse --short HEAD') + (git('status --porcelain -- web evaluar.js') ? ' + cambios sin guardar' : '');
+  const out = { version, commit, simbolos: o.simbolos, comision: o.comision, maxDias: o.maxDias, salidaMonitor: !o.sinSalidaMonitor, datos: info, estrategias: {} };
+  console.log(`Trading Pedro ${version} (${commit}) · ${o.simbolos.join(', ')} · comisión ${num(o.comision)} %`);
 
-  console.log(`Trading Pedro ${version} (${commit}) · ${ESTRATEGIA.name} · ${o.simbolo} · comisión ${num(o.comision)} %`);
-  console.log(`Lecturas de 4H: ${sim.cuenta.lecturas} · con entrada: ${sim.cuenta.senales} · sin objetivo: ${sim.cuenta.sinObjetivo} · plan no válido: ${sim.cuenta.planInvalido}`);
-  imprimir('DESARROLLO (para decidir mejoras)', out.desarrollo, [sim.desde, sim.corte]);
-  if (o.reserva) {
-    out.reserva = { desde: fecha(sim.corte), hasta: fecha(sim.hasta), ...resumen(res) };
-    imprimir('RESERVA (solo para confirmar)', out.reserva, [sim.corte, sim.hasta]);
-  } else {
-    console.log(`\nReserva sin mirar: ${fecha(sim.corte).slice(0, 10)} a ${fecha(sim.hasta).slice(0, 10)} (usa --reserva solo para confirmar una mejora ya decidida).`);
-  }
-  if (o.operaciones) {
-    console.log('\nOperaciones del tramo de desarrollo:');
-    for (const x of dev) console.log(`  ${fecha(x.entrada)}  ${x.lado.padEnd(5)} ${fmt(x.precio).padStart(10)}  stop ${fmt(x.stop).padStart(10)}  obj ${fmt(x.objetivo).padStart(10)}  ${x.salida.padEnd(8)} ${signo(x.r).padStart(6)} R  ${String(x.horas).padStart(4)} h${x.contraDiario ? '  contra Diario' : ''}`);
-  }
+  const dir = path.join(ROOT, 'evaluaciones'), archivoBase = path.join(dir, 'base.json');
+  const base = fs.existsSync(archivoBase) && !o.fijarBase ? JSON.parse(fs.readFileSync(archivoBase, 'utf8')) : null;
+  let rango;
+  for (const clave of o.estrategias) {
+    const E = ESTRATEGIAS[clave], ops = [], cuenta = {};
+    for (const sim of o.simbolos) {
+      const r = simular(datos[sim], o, E);
+      rango = r;
+      for (const x of r.ops) ops.push({ simbolo: sim, ...x });
+      for (const k of Object.keys(r.cuenta)) cuenta[k] = (cuenta[k] || 0) + r.cuenta[k];
+    }
+    ops.sort((a, b) => a.entrada - b.entrada);
+    const dev = ops.filter((x) => x.entrada < rango.corte), res = ops.filter((x) => x.entrada >= rango.corte);
+    const e = out.estrategias[clave] = { nombre: E.name, cuenta, desarrollo: { desde: fecha(rango.desde), hasta: fecha(rango.corte), ...resumen(dev, o.simbolos) } };
 
-  const dir = path.join(ROOT, 'evaluaciones'), base = path.join(dir, 'base.json');
-  if (fs.existsSync(base) && !o.fijarBase) comparar(JSON.parse(fs.readFileSync(base, 'utf8')), out);
+    console.log(`\n=== ${E.name} ===`);
+    console.log(`Lecturas de 4H: ${cuenta.lecturas} · con entrada: ${cuenta.senales} · sin objetivo: ${cuenta.sinObjetivo} · plan no válido: ${cuenta.planInvalido}`);
+    imprimir('DESARROLLO (para decidir mejoras)', e.desarrollo, [rango.desde, rango.corte]);
+    if (o.reserva) {
+      e.reserva = { desde: fecha(rango.corte), hasta: fecha(rango.hasta), ...resumen(res, o.simbolos) };
+      imprimir('RESERVA (solo para confirmar)', e.reserva, [rango.corte, rango.hasta]);
+    }
+    if (o.operaciones) {
+      console.log('\nOperaciones del tramo de desarrollo:');
+      for (const x of dev) console.log(`  ${fecha(x.entrada)}  ${x.simbolo.padEnd(8)} ${x.lado.padEnd(5)} ${fmt(x.precio).padStart(10)}  stop ${fmt(x.stop).padStart(10)}  obj ${fmt(x.objetivo).padStart(10)}  ${x.salida.padEnd(8)} ${signo(x.r).padStart(6)} R  ${String(x.horas).padStart(4)} h${x.contraDiario ? '  contra Diario' : ''}`);
+    }
+    if (base) comparar(base, out, clave);
+    e.operaciones = dev; // las de la reserva no se guardan: no deben servir para ajustar
+  }
+  if (!o.reserva) console.log(`\nReserva sin mirar: ${fecha(rango.corte).slice(0, 10)} a ${fecha(rango.hasta).slice(0, 10)} (usa --reserva solo para confirmar una mejora ya decidida).`);
+  if (o.simbolos.length > 1) console.log('Nota: las monedas suelen moverse juntas, así que sus operaciones no son del todo independientes y el margen real es algo más ancho que el indicado.');
+
   if (!o.noGuardar) {
     fs.mkdirSync(dir, { recursive: true });
-    out.operaciones = dev; // las de la reserva no se guardan: no deben servir para ajustar
     const sello = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-');
-    const f = path.join(dir, `${sello}_${o.simbolo}.json`);
+    const f = path.join(dir, `${sello}.json`);
     fs.writeFileSync(f, JSON.stringify(out, null, 1));
     console.log(`\nGuardado: ${path.relative(ROOT, f)}`);
-    if (o.fijarBase) { fs.writeFileSync(base, JSON.stringify(out, null, 1)); console.log('Fijado como base de comparación: evaluaciones' + path.sep + 'base.json'); }
+    if (o.fijarBase) {
+      fs.writeFileSync(archivoBase, JSON.stringify(out, null, 1));
+      guardarMedicion(out);
+      console.log('Fijado como base de comparación: evaluaciones' + path.sep + 'base.json (y web' + path.sep + 'medicion.js para la app)');
+    }
   }
 }
 

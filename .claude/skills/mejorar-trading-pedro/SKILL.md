@@ -1,9 +1,11 @@
 ---
 name: mejorar-trading-pedro
-description: Ciclo de mejora medida de Trading Pedro. Corre el evaluador, propone UNA mejora de la estrategia con su hipótesis, la implementa en una rama, vuelve a medir contra la base y la acepta o la descarta según los números, anotando todo en la bitácora. Úsalo cuando el usuario pida "mejorar Trading Pedro", "otro ciclo de mejora", "mejora la estrategia", "prueba esta idea" (un filtro, un stop, un objetivo, un indicador) o pregunte si un cambio de reglas de verdad mejora los resultados. No lo uses para cambios de interfaz o funciones nuevas que no alteran las señales (ahí basta correr `node pruebas.js`).
+description: Ciclo de mejora medida de la estrategia propia de Trading Pedro (la estrategia "Pedro"). Corre el evaluador, propone UNA mejora de la estrategia con su hipótesis, la implementa en una rama, vuelve a medir contra la base y la acepta o la descarta según los números, anotando todo en la bitácora. Úsalo cuando el usuario pida "mejorar Trading Pedro", "otro ciclo de mejora", "mejora la estrategia", "prueba esta idea" (un filtro, un stop, un objetivo, un indicador) o pregunte si un cambio de reglas de verdad mejora los resultados. No lo uses para cambios de interfaz o funciones nuevas que no alteran las señales (ahí basta correr `node pruebas.js`).
 ---
 
 # Ciclo de mejora de Trading Pedro
+
+La estrategia que se mejora es **Pedro** (`web/estrategia_pedro.js`). **TradingLatino (`web/tradinglatino.js`) no se toca nunca**: es la referencia fija contra la que se ve cuánto ha cambiado Pedro.
 
 El objetivo es que cada cambio en las reglas de la estrategia quede **medido**, no opinado. Un ciclo prueba una sola idea. La mayoría de las ideas no mejoran nada: descartarlas es un resultado normal y útil.
 
@@ -12,13 +14,14 @@ El objetivo es que cada cambio en las reglas de la estrategia quede **medido**, 
 | Qué | Comando |
 |---|---|
 | Pruebas de regresión | `node pruebas.js` |
-| Evaluar el tramo de desarrollo | `node evaluar.js` (añade `--operaciones` para ver cada operación) |
+| Evaluar el tramo de desarrollo | `node evaluar.js` (tarda unos 40 s; `--estrategia pedro` mide solo Pedro; `--operaciones` lista cada operación) |
 | Fijar la base de comparación | `node evaluar.js --fijar-base` |
 | Mirar la reserva | `node evaluar.js --reserva` (solo en el paso 6) |
 | Regenerar el archivo único | `python construir_html.py` |
 
-- Reglas de la estrategia: `web/tradinglatino.js`. Indicadores: `web/indicadores.js`. Simulación: `evaluar.js`.
-- Base: `evaluaciones/base.json`. Bitácora: `evaluaciones/bitacora.md`.
+- Reglas que se mejoran: `web/estrategia_pedro.js`. Indicadores: `web/indicadores.js`. Simulación: `evaluar.js`.
+- Base: `evaluaciones/base.json`. Bitácora: `evaluaciones/bitacora.md`. Al fijar la base se regenera `web/medicion.js`, que es lo que el panel de la app muestra como "Medición histórica".
+- Se mide en BTC, ETH y SOL juntas (`datos/`), con un grupo por moneda. El TOTAL es la medida que decide; las monedas por separado sirven para ver si la mejora es general.
 - Los resultados se miden en R (1 R = lo arriesgado en una operación). La medida principal es el **R medio** con su margen del 95 %.
 
 ## El ciclo
@@ -34,7 +37,7 @@ El objetivo es que cada cambio en las reglas de la estrategia quede **medido**, 
 
 ### 3. Implementar
 - Crea una rama: `git switch -c mejora/<nombre-corto>`.
-- Haz el cambio mínimo. Si añades un valor ajustable (un umbral, un múltiplo), ponlo como constante con nombre al inicio del archivo, junto a `NEAR_ATR` y las demás.
+- Haz el cambio mínimo, solo en `web/estrategia_pedro.js`. Si añades un valor ajustable (un umbral, un múltiplo), ponlo como constante con nombre al inicio del archivo, junto a `NEAR_ATR` y las demás.
 - No toques `evaluar.js` en un ciclo que cambia la estrategia: cambiar la regla y la vara de medir a la vez hace que la comparación no valga. Mejorar el evaluador es un ciclo aparte, que termina fijando una base nueva.
 
 ### 4. Medir
@@ -44,7 +47,8 @@ El objetivo es que cada cambio en las reglas de la estrategia quede **medido**, 
 ### 5. Decidir con el tramo de desarrollo
 La mejora pasa a confirmación solo si se cumple todo:
 - El R medio sube, y sube también (o al menos no baja) el R total.
-- No se queda sin operaciones: conserva al menos la mitad de las de la base y no menos de 40. Un filtro que deja 12 operaciones estupendas no demuestra nada.
+- No se queda sin operaciones: conserva al menos la mitad de las de la base y no menos de 100. Un filtro que deja 12 operaciones estupendas no demuestra nada.
+- Mejora en al menos dos de las tres monedas. Si solo mejora una, es una rareza de esa moneda, no una regla mejor.
 - La mejora no depende de una o dos operaciones: quita la mejor operación y mira si el resultado sigue siendo mejor que la base.
 - La peor caída no empeora de forma clara.
 - El cambio va en el sentido de la hipótesis. Si mejora por una razón distinta de la prevista, trátalo como casualidad.
@@ -64,7 +68,8 @@ Muéstrale, en lenguaje llano: la hipótesis, la tabla antes/después del tramo 
 
 Si acepta:
 1. `node pruebas.js --actualizar` (si cambió un cálculo a propósito) y `node pruebas.js`.
-2. `node evaluar.js --fijar-base`.
+2. Sube `VERSION` en `web/estrategia_pedro.js` (Pedro 1 → Pedro 2…).
+2b. `node evaluar.js --fijar-base` (actualiza también `web/medicion.js`).
 3. `python construir_html.py`.
 4. Comprueba que la app abre sin errores (servidor `trading-pedro` de `.claude/launch.json`).
 5. Commit y fusión con `main` solo cuando él lo pida. La versión de `trading_pedro.py` la sube él o se sube cuando lo indique.
@@ -84,5 +89,5 @@ Lección: qué se aprendió, y qué pista deja para otro ciclo.
 ## Límites
 
 - Esta herramienta mide reglas mecánicas sobre datos pasados. No da consejos de inversión ni dice cuándo operar, y nunca ejecuta operaciones.
-- Con unas 85 operaciones, diferencias pequeñas de R medio son ruido. Ante la duda, descartar: una mejora falsa cuesta más que una mejora verdadera que se deja pasar.
+- Con unas 300 operaciones de tres monedas que se mueven juntas, diferencias pequeñas de R medio siguen siendo ruido. Ante la duda, descartar: una mejora falsa cuesta más que una mejora verdadera que se deja pasar.
 - Varios ciclos seguidos sobre los mismos datos también sobreajustan, aunque cada uno sea honesto. Por eso la bitácora cuenta todos los intentos, incluidos los fallidos.

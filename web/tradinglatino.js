@@ -269,5 +269,6 @@
     return { reads, plan: plan(r4, reads['1h'], rd, ind.fmt), global };
   }
 
-  window.TPStrategies = { tradingLatino: { name: 'TradingLatino (Jaime Merino)', intervals: ['1h', '4h', '1d'], analyze } };
+  window.TPStrategies = window.TPStrategies || {};
+  window.TPStrategies.tradingLatino = { name: 'TradingLatino (Jaime Merino)', intervals: ['1h', '4h', '1d'], analyze };
 })();
