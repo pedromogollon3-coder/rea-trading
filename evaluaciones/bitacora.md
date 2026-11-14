@@ -1,6 +1,6 @@
 # Bitácora de mejoras de Trading Pedro
 
-Cada ciclo de mejora deja aquí una entrada, se acepte o no. Miradas a la reserva hasta ahora: 0.
+Cada ciclo de mejora deja aquí una entrada, se acepte o no. Miradas a la reserva hasta ahora: 1.
 
 ## 2026-11-14 · Base inicial · versión 3.2
 
@@ -34,3 +34,10 @@ Desarrollo (2024-06-02 a 2026-04-04), Pedro 1 = TradingLatino: 307 operaciones �
 Por moneda: BTC 102 oper., +0,01 · ETH 105 oper., +0,08 · SOL 100 oper., +0,11.
 Reserva: sin mirar (miradas hasta ahora: 0).
 Pistas (sin probar): "con gatillo de 1H" sigue por debajo (57 oper., −0,08) frente a "sin gatillo" (250 oper., +0,10). "Contra el Diario" (96 oper., +0,19) sale mejor que "a favor" (211 oper., +0,01), al revés de lo que dice la estrategia: mirar por qué antes de tocar nada.
+
+## 2026-11-14 · Entrada confirmada (solo al nacer el valle) · NO CONFIRMADA
+Hipótesis: si la entrada exige que el valle nuevo del monitor de 4H ya haya nacido y deja de entrar cuando el monitor solo cambia de tono (rojo claro cerca del 0 en largos, verde oscuro en cortos), sube el R medio, porque el cambio de tono solo dice que el impulso contrario se debilita, no que terminó, y se entra antes de tiempo.
+Cambio: web/estrategia_pedro.js, tercera condición de largos y de cortos (se quitó la alternativa del cambio de tono). Revertido.
+Desarrollo: operaciones 307 → 210 · R medio +0,07 → +0,12 (margen 0,00 a +0,23) · R total +20,3 → +24,4 · peor caída 14,3 → 7,0 · stops 53 → 19. Por moneda: BTC +0,01 → +0,02 · ETH +0,08 → +0,10 · SOL +0,11 → +0,25. Sin la mejor operación: +0,05 → +0,09. Pasaba todos los criterios.
+Reserva (2026-04-04 a 2026-11-14): R medio base −0,01 (106 oper., R total −1,1; BTC −0,10 · ETH +0,06 · SOL −0,01), con el cambio −0,07 (77 oper., R total −5,1) (mirada n.º 1). Peor que la base: no se confirma.
+Lección: la ventaja de las entradas "confirmadas" en desarrollo venía sobre todo de SOL y no se repitió fuera de muestra; en la reserva los cortos confirmados pasaron de +0,03 a −0,10. Dato reutilizable: la base (Pedro 1 = TradingLatino) rinde −0,01 R en la reserva, o sea que ni en desarrollo ni en reserva muestra ventaja clara. Ojo metodológico: la hipótesis salió de mirar unas 20 divisiones de las mismas 307 operaciones, lo que facilita encontrar diferencias por casualidad; la reserva hizo su trabajo. Pistas que quedan sin probar (débiles): largos con el monitor de 1H en rojo oscuro (11 oper., −0,73, igual en las tres monedas, pero sin espejo en los cortos); operaciones con la tendencia de 1H en contra (65 oper., −0,13; BTC al revés).
